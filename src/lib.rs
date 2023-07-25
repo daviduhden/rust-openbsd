@@ -44,7 +44,7 @@
     clippy::missing_trait_methods,
     clippy::unseparated_literal_suffix
 )]
-#![cfg(target_os = "openbsd")]
+#![cfg(feature = "openbsd")]
 extern crate alloc;
 use alloc::ffi::{CString, NulError};
 use core::ffi::{c_char, c_int};

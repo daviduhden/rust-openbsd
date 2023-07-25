@@ -8,14 +8,14 @@ but in the future may contain functionality for Linux's
   
 ## Pledge  
   
-It is very rare to use the `execpromises` parameter, so [`pledge`] only relies on [`Promise`]s.
+It is very rare to use the `execpromises` parameter, so [`pledge`](https://docs.rs/priv_sep/latest/priv_sep/fn.pledge.html) only relies on [`Promise`](https://docs.rs/priv_sep/latest/priv_sep/enum.Promise.html)s.
 Additionally this function cannot be used to invoke `pledge(2)` with a `promises` value of `""`.  
   
 ## Unveil  
   
 Unlike `pledge(2)` which allows a large quantity of duplicate `promises` to be provided, `unveil(2)` allows a maximum
 of four `permissions` to be passed. For this reason, there are dedicated functions for each quantity of
-[`Permission`]s.  
+[`Permission`](https://docs.rs/priv_sep/latest/priv_sep/enum.Permission.html)s.  
   
 ## Errors  
   
