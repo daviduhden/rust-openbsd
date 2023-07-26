@@ -219,6 +219,7 @@ pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), c_in
 }
 /// A `permission` to [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
 #[allow(clippy::exhaustive_enums)]
+#[derive(Clone, Copy)]
 pub enum Permission {
     /// Consult `unveil(2)`.
     Create,
@@ -244,8 +245,14 @@ impl Display for UnveilErr {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::CInt(c) => c.fmt(f),
-            Self::NulError(ref e) => e.fmt(f),
+            Self::CInt(c) => write!(
+                f,
+                "The following error was returned when calling 'unveil(2)': {c}"
+            ),
+            Self::NulError(ref e) => write!(
+                f,
+                "The path passed to 'unveil(2)' was unable to be converted to a CString: {e}"
+            ),
         }
     }
 }
@@ -257,43 +264,44 @@ impl std::error::Error for UnveilErr {}
 /// Will return [`c_int`](https://doc.rust-lang.org/stable/core/ffi/type.c_int.html) iff
 /// `unveil(2)` does. Returns [`NulError`](https://doc.rust-lang.org/alloc/ffi/struct.NulError.html)
 /// iff [`CString::new`](https://doc.rust-lang.org/alloc/ffi/struct.CString.html#method.new) does.
+/// This is a private function and uses `Option` for the path to indicate calling `unveil(2)` with
+/// two `NULL` arguments.
 #[inline]
 #[allow(unsafe_code, clippy::indexing_slicing, clippy::into_iter_on_ref)]
 fn unveil<P: AsRef<Path>, const N: usize>(
     path: Option<P>,
-    permissions: &[Permission; N],
+    permissions: [Permission; N],
 ) -> Result<(), UnveilErr> {
     extern "C" {
         fn unveil(path: *const c_char, permissions: *const c_char) -> c_int;
     }
     let path_c: CString;
     let perm_c: CString;
-    let (fst, snd) = match path {
-        Some(path_val) => {
-            let mut v = Vec::new();
-            permissions.into_iter().fold((), |_, p| {
-                v.push(match *p {
-                    Permission::Create => b'c',
-                    Permission::Execute => b'x',
-                    Permission::Read => b'r',
-                    Permission::Write => b'w',
-                });
+    let (fst, snd) = if let Some(p) = path {
+        let mut v = Vec::new();
+        permissions.into_iter().fold((), |_, perm| {
+            v.push(match perm {
+                Permission::Create => b'c',
+                Permission::Execute => b'x',
+                Permission::Read => b'r',
+                Permission::Write => b'w',
             });
-            v.push(0);
-            match CString::new(path_val.as_ref().as_os_str().as_bytes()) {
-                Ok(s) => {
-                    path_c = s;
-                    // SAFETY:
-                    // v was populated above with correct ASCII-encoding of the literal
-                    // values all of which do not have 0 bytes.
-                    // v ends with a 0/nul byte.
-                    perm_c = unsafe { CString::from_vec_with_nul_unchecked(v) };
-                    (path_c.as_ptr(), perm_c.as_ptr())
-                }
-                Err(e) => return Err(UnveilErr::NulError(e)),
+        });
+        v.push(0);
+        match CString::new(p.as_ref().as_os_str().as_bytes()) {
+            Ok(s) => {
+                path_c = s;
+                // SAFETY:
+                // v was populated above with correct ASCII-encoding of the literal
+                // values all of which do not have 0 bytes.
+                // v ends with a 0/nul byte.
+                perm_c = unsafe { CString::from_vec_with_nul_unchecked(v) };
+                (path_c.as_ptr(), perm_c.as_ptr())
             }
+            Err(e) => return Err(UnveilErr::NulError(e)),
         }
-        None => (ptr::null(), ptr::null()),
+    } else {
+        (ptr::null(), ptr::null())
     };
     // SAFETY:
     // unveil is an FFI binding; thus requires unsafe code.
@@ -312,7 +320,7 @@ fn unveil<P: AsRef<Path>, const N: usize>(
 #[allow(clippy::unreachable)]
 #[inline]
 pub fn unveil_no_more() -> Result<(), c_int> {
-    unveil::<PathBuf, 0>(None, &[]).map_err(|e| match e {
+    unveil::<PathBuf, 0>(None, []).map_err(|e| match e {
         UnveilErr::CInt(c) => c,
         UnveilErr::NulError(_) => unreachable!("There is a bug in unveil."),
     })
@@ -324,7 +332,7 @@ pub fn unveil_no_more() -> Result<(), c_int> {
 /// Returns [`UnveilErr`] when a problem occurs.
 #[inline]
 pub fn unveil_no_perms<P: AsRef<Path>>(path: P) -> Result<(), UnveilErr> {
-    unveil(Some(path), &[])
+    unveil(Some(path), [])
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `path` for `path` and `perm` for `permissions`.
 ///
@@ -333,7 +341,7 @@ pub fn unveil_no_perms<P: AsRef<Path>>(path: P) -> Result<(), UnveilErr> {
 /// Returns [`UnveilErr`] when a problem occurs.
 #[inline]
 pub fn unveil_one_perm<P: AsRef<Path>>(path: P, perm: Permission) -> Result<(), UnveilErr> {
-    unveil(Some(path), &[perm])
+    unveil(Some(path), [perm])
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `path` for `path` and `perms` for `permissions`.
 ///
@@ -341,7 +349,7 @@ pub fn unveil_one_perm<P: AsRef<Path>>(path: P, perm: Permission) -> Result<(), 
 ///
 /// Returns [`UnveilErr`] when a problem occurs.
 #[inline]
-pub fn unveil_two_perms<P: AsRef<Path>>(path: P, perms: &[Permission; 2]) -> Result<(), UnveilErr> {
+pub fn unveil_two_perms<P: AsRef<Path>>(path: P, perms: [Permission; 2]) -> Result<(), UnveilErr> {
     unveil(Some(path), perms)
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `path` for `path` and `perms` for `permissions`.
@@ -352,7 +360,7 @@ pub fn unveil_two_perms<P: AsRef<Path>>(path: P, perms: &[Permission; 2]) -> Res
 #[inline]
 pub fn unveil_three_perms<P: AsRef<Path>>(
     path: P,
-    perms: &[Permission; 3],
+    perms: [Permission; 3],
 ) -> Result<(), UnveilErr> {
     unveil(Some(path), perms)
 }
@@ -365,7 +373,7 @@ pub fn unveil_three_perms<P: AsRef<Path>>(
 pub fn unveil_all_perms<P: AsRef<Path>>(path: P) -> Result<(), UnveilErr> {
     unveil(
         Some(path),
-        &[
+        [
             Permission::Create,
             Permission::Execute,
             Permission::Read,
@@ -401,7 +409,7 @@ mod tests {
         // and one can unveil more permissions (unlike pledge which can only remove promises).
         assert!(super::unveil_two_perms(
             "/home/zack/foo.txt",
-            &[Permission::Read, Permission::Read]
+            [Permission::Read, Permission::Read]
         )
         .is_ok());
         assert!(std::fs::metadata("/home/zack/foo.txt").is_ok());

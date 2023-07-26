@@ -8,7 +8,8 @@ but in the future may contain functionality for Linux's
   
 ## Pledge  
   
-It is very rare to use the `execpromises` parameter, so [`pledge`](https://docs.rs/priv_sep/latest/priv_sep/fn.pledge.html) only relies on [`Promise`](https://docs.rs/priv_sep/latest/priv_sep/enum.Promise.html)s.  
+It is very rare to use the `execpromises` parameter, so [`pledge`](https://docs.rs/priv_sep/latest/priv_sep/fn.pledge.html)
+only relies on [`Promise`](https://docs.rs/priv_sep/latest/priv_sep/enum.Promise.html)s.  
   
 ## Unveil  
   
@@ -41,13 +42,13 @@ laptop$ cargo build --release
    Compiling semver v1.0.18
    Compiling libc v0.2.147
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.3.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.4.0 (/home/zack/priv_sep)
     Finished release [optimized] target(s) in 1.90s
-laptop$ cargo t
+laptop$ touch /home/zack/foo.txt && cargo t && rm /home/zack/foo.txt
    Compiling semver v1.0.18
    Compiling libc v0.2.147
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.3.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.4.0 (/home/zack/priv_sep)
     Finished test [unoptimized + debuginfo] target(s) in 1.43s
      Running unittests src/lib.rs (target/debug/deps/priv_sep-dcb151b099a76f20)
 
