@@ -8,8 +8,7 @@ but in the future may contain functionality for Linux's
   
 ## Pledge  
   
-It is very rare to use the `execpromises` parameter, so [`pledge`](https://docs.rs/priv_sep/latest/priv_sep/fn.pledge.html) only relies on [`Promise`](https://docs.rs/priv_sep/latest/priv_sep/enum.Promise.html)s.
-Additionally this function cannot be used to invoke `pledge(2)` with a `promises` value of `""`.  
+It is very rare to use the `execpromises` parameter, so [`pledge`](https://docs.rs/priv_sep/latest/priv_sep/fn.pledge.html) only relies on [`Promise`](https://docs.rs/priv_sep/latest/priv_sep/enum.Promise.html)s.  
   
 ## Unveil  
   
@@ -39,12 +38,18 @@ Cloning into 'priv_sep'...
 laptop$ cd priv_sep/
 laptop$ cargo build --release
     Updating crates.io index
-   Compiling priv_sep v0.1.0 (/home/zack/projects/priv_sep)
-    Finished release [optimized] target(s) in 1.35s
+   Compiling semver v1.0.18
+   Compiling libc v0.2.147
+   Compiling rustc_version v0.4.0
+   Compiling priv_sep v0.3.0 (/home/zack/priv_sep)
+    Finished release [optimized] target(s) in 1.90s
 laptop$ cargo t
-   Compiling priv_sep v0.1.0 (/home/zack/projects/priv_sep)
-    Finished test [unoptimized + debuginfo] target(s) in 0.33s
-     Running unittests src/lib.rs (target/debug/deps/priv_sep-2b69b951a87c3632)
+   Compiling semver v1.0.18
+   Compiling libc v0.2.147
+   Compiling rustc_version v0.4.0
+   Compiling priv_sep v0.3.0 (/home/zack/priv_sep)
+    Finished test [unoptimized + debuginfo] target(s) in 1.43s
+     Running unittests src/lib.rs (target/debug/deps/priv_sep-dcb151b099a76f20)
 
 running 1 test
 test tests::test ... ok

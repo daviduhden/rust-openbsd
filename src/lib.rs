@@ -8,8 +8,7 @@
 //!  
 //! ## Pledge  
 //!  
-//! It is very rare to use the `execpromises` parameter, so [`pledge`] only relies on [`Promise`]s.
-//! Additionally this function cannot be used to invoke `pledge(2)` with a `promises` value of `""`.  
+//! It is very rare to use the `execpromises` parameter, so [`pledge`] only relies on [`Promise`]s.  
 //!  
 //! ## Unveil  
 //!  
@@ -22,6 +21,7 @@
 //! Any error returned from the underlying system call is propagated via
 //! [`c_int`](https://doc.rust-lang.org/core/ffi/type.c_int.html). Note for both `pledge(2)` and `unveil(2)` duplicates
 //! are ignored, so it is not an error to pass in duplicate values for their corresponding functions in this crate.  
+#![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 #![deny(
     unsafe_code,
     unused,
@@ -58,6 +58,7 @@ use Promise::{
     Tmppath, Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
 };
 #[non_exhaustive]
+#[derive(Clone, Copy)]
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2).
 pub enum Promise {
     /// Consult `pledge(2)`.
@@ -134,27 +135,24 @@ pub enum Promise {
     Wroute,
 }
 /// Invokes [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) always passing in
-/// `NULL` for `execpromises`. When no [`Promise`]s are passed, then `NULL` is passed
-/// for `promises`. There is no way to pass `""` for `promises`. Like the system call
-/// it wraps, duplicates are ignored.
+/// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some([])`
+/// is passed, then `""` is passed for `promises`. Like the system call it wraps, duplicates are ignored.
 ///
 /// # Errors
 ///
 /// Will return [`c_int`](https://doc.rust-lang.org/stable/core/ffi/type.c_int.html) iff
 /// `pledge(2)` does.
 #[inline]
-#[allow(unsafe_code, clippy::indexing_slicing, clippy::into_iter_on_ref)]
-pub fn pledge<const N: usize>(promises: &[Promise; N]) -> Result<(), c_int> {
+#[allow(unsafe_code, clippy::indexing_slicing, clippy::option_if_let_else)]
+pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), c_int> {
     extern "C" {
         fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
     }
     let arg: CString;
-    let ptr = if promises.is_empty() {
-        ptr::null()
-    } else {
+    let ptr = if let Some(prom) = promises {
         let mut p = Vec::new();
-        promises.into_iter().fold((), |_, promise| {
-            p.extend_from_slice(match *promise {
+        prom.into_iter().fold((), |_, promise| {
+            p.extend_from_slice(match promise {
                 Audio => b"audio ",
                 Bpf => b"bpf ",
                 Chown => b"chown ",
@@ -193,17 +191,23 @@ pub fn pledge<const N: usize>(promises: &[Promise; N]) -> Result<(), c_int> {
                 Wroute => b"wroute ",
             });
         });
-        // All promises have a space after them which means
-        // we must replace the last promise's space with
-        // 0/nul byte.
-        let idx = p.len() - 1;
-        p[idx] = 0;
+        let idx = p.len();
+        if idx == 0 {
+            p.push(0);
+        } else {
+            // All promises have a space after them which means
+            // we must replace the last promise's space with
+            // 0/nul byte.
+            p[idx - 1] = 0;
+        }
         // SAFETY:
         // p was populated above with correct ASCII-encoding of the literal
         // values all of which do not have 0 bytes.
         // p ends with a 0/nul byte.
         arg = unsafe { CString::from_vec_with_nul_unchecked(p) };
         arg.as_ptr()
+    } else {
+        ptr::null()
     };
     // SAFETY:
     // pledge is an FFI binding; thus requires unsafe code.
@@ -369,7 +373,7 @@ pub fn unveil_all_perms<P: AsRef<Path>>(path: P) -> Result<(), UnveilErr> {
         ],
     )
 }
-#[cfg(test)]
+#[cfg(all(test, target_os = "openbsd"))]
 mod tests {
     use super::{Permission, Promise};
     // We only have one test since we must force the order of pledge/unveil calls.
@@ -379,15 +383,15 @@ mod tests {
     #[test]
     fn test() {
         // This tests that a NULL pledge does nothing.
-        assert!(super::pledge(&[]).is_ok());
+        assert!(super::pledge::<0>(None).is_ok());
         print!("");
         // This tests that duplicate pledges are ignored.
-        assert!(super::pledge(&[
+        assert!(super::pledge(Some([
             Promise::Stdio,
             Promise::Stdio,
             Promise::Unveil,
             Promise::Rpath
-        ])
+        ]))
         .is_ok());
         print!("");
         // This tests unveil with no permissions.
@@ -410,8 +414,8 @@ mod tests {
         assert!(super::unveil_no_perms("/home/zack/foo.txt").is_err());
         assert!(std::fs::metadata("/home/zack/foo.txt").is_ok());
         // The below tests that Promises can only be removed and not added.
-        assert!(super::pledge(&[Promise::Stdio]).is_ok());
-        assert!(super::pledge(&[Promise::Rpath]).is_err());
+        assert!(super::pledge(Some([Promise::Stdio])).is_ok());
+        assert!(super::pledge(Some([Promise::Rpath])).is_err());
         // If the below is uncommented, the program should crash since the above
         // call to pledge no longer allows access to the file system.
         //_ = std::fs::metadata("/home/zack/foo.txt");
