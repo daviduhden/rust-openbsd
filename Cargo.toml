@@ -2,14 +2,14 @@
 authors = ["Zack Newman <zack@philomathiclife.com>"]
 categories = ["development-tools::ffi", "external-ffi-bindings", "os"]
 description = "FFI for pledge(2) and unveil(2) on OpenBSD."
-documentation = "https://docs.rs/priv_sep"
+documentation = "https://docs.rs/priv_sep/latest/priv_sep/"
 edition = "2021"
 keywords = ["ffi", "openbsd", "privsep", "security"]
 license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-version = "0.4.0"
+version = "0.4.1"
 
 [lib]
 name = "priv_sep"

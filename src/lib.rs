@@ -2,7 +2,7 @@
 //!  
 //! `priv_sep` is a library for privilege separation.
 //! It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
-//! [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, `stable` not `current`—
+//! [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—
 //! but in the future may contain functionality for Linux's
 //! [`seccomp(2)`](https://man7.org/linux/man-pages/man2/seccomp.2.html).  
 //!  
@@ -42,6 +42,7 @@
     clippy::blanket_clippy_restriction_lints,
     clippy::implicit_return,
     clippy::missing_trait_methods,
+    clippy::min_ident_chars,
     clippy::unseparated_literal_suffix
 )]
 #![cfg(feature = "openbsd")]
@@ -267,7 +268,7 @@ impl std::error::Error for UnveilErr {}
 /// This is a private function and uses `Option` for the path to indicate calling `unveil(2)` with
 /// two `NULL` arguments.
 #[inline]
-#[allow(unsafe_code, clippy::indexing_slicing, clippy::into_iter_on_ref)]
+#[allow(unsafe_code, clippy::indexing_slicing)]
 fn unveil<P: AsRef<Path>, const N: usize>(
     path: Option<P>,
     permissions: [Permission; N],

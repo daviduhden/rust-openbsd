@@ -2,7 +2,7 @@
   
 [`priv_sep`](https://docs.rs/priv_sep/latest/priv_sep) is a library for privilege separation.
 It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
-[`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, `stable` not `current`—
+[`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—
 but in the future may contain functionality for Linux's
 [`seccomp(2)`](https://man7.org/linux/man-pages/man2/seccomp.2.html).  
   
@@ -27,7 +27,7 @@ are ignored, so it is not an error to pass in duplicate values for their corresp
   
 This package will be actively maintained to stay in-sync with the latest version of OpenBSD-stable; as a result,
 the crate is only tested on the `x86_64-unknown-openbsd` target. While OpenBSD supports both the most recent
-`release/stable` release as well as the previous version, only the most recent version will be supported by this
+-release/-stable release as well as the previous version, only the most recent version will be supported by this
 library. For that reason any removal of `promises` in subsequent releases of `pledge(2)` will lead to breaking
 changes in this library as the corresponding `Promise` variant will be removed.  
   
