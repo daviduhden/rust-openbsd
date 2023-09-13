@@ -41,8 +41,8 @@
     clippy::arithmetic_side_effects,
     clippy::blanket_clippy_restriction_lints,
     clippy::implicit_return,
-    clippy::missing_trait_methods,
     clippy::min_ident_chars,
+    clippy::missing_trait_methods,
     clippy::unseparated_literal_suffix
 )]
 #![cfg(feature = "openbsd")]
@@ -61,7 +61,7 @@ use Promise::{
     Tmppath, Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
 };
 #[non_exhaustive]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2).
 pub enum Promise {
     /// Consult `pledge(2)`.
@@ -137,6 +137,49 @@ pub enum Promise {
     /// Consult `pledge(2)`.
     Wroute,
 }
+impl Display for Promise {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Audio => f.write_str("pledge(2) 'audio' promise"),
+            Bpf => f.write_str("pledge(2) 'bpf' promise"),
+            Chown => f.write_str("pledge(2) 'chown' promise"),
+            Cpath => f.write_str("pledge(2) 'cpath' promise"),
+            Disklabel => f.write_str("pledge(2) 'disklabel' promise"),
+            Dns => f.write_str("pledge(2) 'dns' promise"),
+            Dpath => f.write_str("pledge(2) 'dpath' promise"),
+            Drm => f.write_str("pledge(2) 'drm' promise"),
+            Error => f.write_str("pledge(2) 'error' promise"),
+            Exec => f.write_str("pledge(2) 'exec' promise"),
+            Fattr => f.write_str("pledge(2) 'fattr' promise"),
+            Flock => f.write_str("pledge(2) 'flock' promise"),
+            Getpw => f.write_str("pledge(2) 'getpw' promise"),
+            Id => f.write_str("pledge(2) 'id' promise"),
+            Inet => f.write_str("pledge(2) 'inet' promise"),
+            Mcast => f.write_str("pledge(2) 'mcast' promise"),
+            Pf => f.write_str("pledge(2) 'pf' promise"),
+            Proc => f.write_str("pledge(2) 'proc' promise"),
+            ProtExec => f.write_str("pledge(2) 'prot_exec' promise"),
+            Ps => f.write_str("pledge(2) 'ps' promise"),
+            Recvfd => f.write_str("pledge(2) 'recvfd' promise"),
+            Route => f.write_str("pledge(2) 'route' promise"),
+            Rpath => f.write_str("pledge(2) 'rpath' promise"),
+            Sendfd => f.write_str("pledge(2) 'sendfd' promise"),
+            Settime => f.write_str("pledge(2) 'settime' promise"),
+            Stdio => f.write_str("pledge(2) 'stdio' promise"),
+            Tape => f.write_str("pledge(2) 'tape' promise"),
+            Tmppath => f.write_str("pledge(2) 'tmppath' promise"),
+            Tty => f.write_str("pledge(2) 'tty' promise"),
+            Unix => f.write_str("pledge(2) 'unix' promise"),
+            Unveil => f.write_str("pledge(2) 'unveil' promise"),
+            Video => f.write_str("pledge(2) 'video' promise"),
+            Vminfo => f.write_str("pledge(2) 'vminfo' promise"),
+            Vmm => f.write_str("pledge(2) 'vmm' promise"),
+            Wpath => f.write_str("pledge(2) 'wpath' promise"),
+            Wroute => f.write_str("pledge(2) 'wroute' promise"),
+        }
+    }
+}
 /// Invokes [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) always passing in
 /// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some([])`
 /// is passed, then `""` is passed for `promises`. Like the system call it wraps, duplicates are ignored.
@@ -153,7 +196,7 @@ pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::
     let arg: CString;
     let ptr = if let Some(prom) = promises {
         let mut p = Vec::new();
-        prom.into_iter().fold((), |_, promise| {
+        prom.into_iter().fold((), |(), promise| {
             p.extend_from_slice(match promise {
                 Audio => b"audio ",
                 Bpf => b"bpf ",
@@ -221,7 +264,7 @@ pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::
 }
 /// A `permission` to [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
 #[allow(clippy::exhaustive_enums)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum Permission {
     /// Consult `unveil(2)`.
     Create,
@@ -231,6 +274,17 @@ pub enum Permission {
     Read,
     /// Consult `unveil(2)`.
     Write,
+}
+impl Display for Permission {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Create => f.write_str("unveil(2) 'c' permission"),
+            Self::Execute => f.write_str("unveil(2) 'x' permission"),
+            Self::Read => f.write_str("unveil(2) 'r' permission"),
+            Self::Write => f.write_str("unveil(2) 'w' permission"),
+        }
+    }
 }
 /// Error returned by the `unveil` functions.
 #[allow(clippy::exhaustive_enums)]
@@ -277,7 +331,7 @@ fn unveil<P: AsRef<Path>, const N: usize>(
     let perm_c: CString;
     let (fst, snd) = if let Some(p) = path {
         let mut v = Vec::new();
-        permissions.into_iter().fold((), |_, perm| {
+        permissions.into_iter().fold((), |(), perm| {
             v.push(match perm {
                 Permission::Create => b'c',
                 Permission::Execute => b'x',
