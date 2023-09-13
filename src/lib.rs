@@ -2,8 +2,8 @@
 //!  
 //! `priv_sep` is a library for privilege separation.
 //! It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
-//! [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—
-//! but in the future may contain functionality for Linux's
+//! [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—but
+//! in the future may contain functionality for Linux's
 //! [`seccomp(2)`](https://man7.org/linux/man-pages/man2/seccomp.2.html).  
 //!  
 //! ## Pledge  
@@ -19,7 +19,7 @@
 //! ## Errors  
 //!  
 //! Any error returned from the underlying system call is propagated via
-//! [`c_int`](https://doc.rust-lang.org/core/ffi/type.c_int.html). Note for both `pledge(2)` and `unveil(2)` duplicates
+//! [`io::Error`]. Note for both `pledge(2)` and `unveil(2)` duplicates
 //! are ignored, so it is not an error to pass in duplicate values for their corresponding functions in this crate.  
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 #![deny(
@@ -51,6 +51,8 @@ use alloc::ffi::{CString, NulError};
 use core::ffi::{c_char, c_int};
 use core::fmt::{self, Display, Formatter};
 use core::ptr;
+use std::error;
+use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use Promise::{
@@ -141,11 +143,10 @@ pub enum Promise {
 ///
 /// # Errors
 ///
-/// Will return [`c_int`](https://doc.rust-lang.org/stable/core/ffi/type.c_int.html) iff
-/// `pledge(2)` does.
+/// Returns [`Error`] iff `pledge(2)` errors.
 #[inline]
 #[allow(unsafe_code, clippy::indexing_slicing, clippy::option_if_let_else)]
-pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), c_int> {
+pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::Error> {
     extern "C" {
         fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
     }
@@ -215,7 +216,7 @@ pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), c_in
     // ptr meets the requirements of the pledge(2) call.
     match unsafe { pledge(ptr, ptr::null()) } {
         0i32 => Ok(()),
-        c => Err(c),
+        _ => Err(io::Error::last_os_error()),
     }
 }
 /// A `permission` to [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
@@ -236,9 +237,9 @@ pub enum Permission {
 #[derive(Debug)]
 pub enum UnveilErr {
     /// Error propagated from [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
-    CInt(c_int),
+    Error(io::Error),
     /// Error when a path cannot be converted into a
-    /// [`CString`](https://doc.rust-lang.org/alloc/ffi/struct.CString.html).
+    /// [`CString`].
     NulError(NulError),
 }
 impl Display for UnveilErr {
@@ -246,10 +247,7 @@ impl Display for UnveilErr {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::CInt(c) => write!(
-                f,
-                "The following error was returned when calling 'unveil(2)': {c}"
-            ),
+            Self::Error(ref err) => err.fmt(f),
             Self::NulError(ref e) => write!(
                 f,
                 "The path passed to 'unveil(2)' was unable to be converted to a CString: {e}"
@@ -257,14 +255,13 @@ impl Display for UnveilErr {
         }
     }
 }
-impl std::error::Error for UnveilErr {}
+impl error::Error for UnveilErr {}
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
 ///
 /// # Errors
 ///
-/// Will return [`c_int`](https://doc.rust-lang.org/stable/core/ffi/type.c_int.html) iff
-/// `unveil(2)` does. Returns [`NulError`](https://doc.rust-lang.org/alloc/ffi/struct.NulError.html)
-/// iff [`CString::new`](https://doc.rust-lang.org/alloc/ffi/struct.CString.html#method.new) does.
+/// Returns `NulError` iff `CString::new` does.
+/// Returns `Error` iff `unveil(2)` errors.
 /// This is a private function and uses `Option` for the path to indicate calling `unveil(2)` with
 /// two `NULL` arguments.
 #[inline]
@@ -309,20 +306,19 @@ fn unveil<P: AsRef<Path>, const N: usize>(
     // fst and snd meet the requirements of the unveil(2) call.
     match unsafe { unveil(fst, snd) } {
         0i32 => Ok(()),
-        c => Err(UnveilErr::CInt(c)),
+        _ => Err(UnveilErr::Error(io::Error::last_os_error())),
     }
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `NULL` for both `path` and `permissions`.
 ///
 /// # Errors
 ///
-/// Will return [`c_int`](https://doc.rust-lang.org/stable/core/ffi/type.c_int.html) iff
-/// `unveil(2)` does.
+/// Returns [`Error`] when a problem occurs.
 #[allow(clippy::unreachable)]
 #[inline]
-pub fn unveil_no_more() -> Result<(), c_int> {
+pub fn unveil_no_more() -> Result<(), io::Error> {
     unveil::<PathBuf, 0>(None, []).map_err(|e| match e {
-        UnveilErr::CInt(c) => c,
+        UnveilErr::Error(err) => err,
         UnveilErr::NulError(_) => unreachable!("There is a bug in unveil."),
     })
 }

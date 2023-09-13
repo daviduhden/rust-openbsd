@@ -2,8 +2,8 @@
   
 [`priv_sep`](https://docs.rs/priv_sep/latest/priv_sep) is a library for privilege separation.
 It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
-[`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—
-but in the future may contain functionality for Linux's
+[`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD-stable—that is correct, -stable not -current—but
+in the future may contain functionality for Linux's
 [`seccomp(2)`](https://man7.org/linux/man-pages/man2/seccomp.2.html).  
   
 ## Pledge  
@@ -20,7 +20,7 @@ of four `permissions` to be passed. For this reason, there are dedicated functio
 ## Errors  
   
 Any error returned from the underlying system call is propagated via
-[`c_int`](https://doc.rust-lang.org/core/ffi/type.c_int.html). Note for both `pledge(2)` and `unveil(2)` duplicates
+[`Error`](https://doc.rust-lang.org/std/io/struct.Error.html). Note for both `pledge(2)` and `unveil(2)` duplicates
 are ignored, so it is not an error to pass in duplicate values for their corresponding functions in this crate.  
   
 ### Status  
@@ -40,15 +40,15 @@ laptop$ cd priv_sep/
 laptop$ cargo build --release
     Updating crates.io index
    Compiling semver v1.0.18
-   Compiling libc v0.2.147
+   Compiling libc v0.2.148
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.4.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.5.0 (/home/zack/priv_sep)
     Finished release [optimized] target(s) in 1.90s
 laptop$ touch /home/zack/foo.txt && cargo t && rm /home/zack/foo.txt
    Compiling semver v1.0.18
-   Compiling libc v0.2.147
+   Compiling libc v0.2.148
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.4.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.5.0 (/home/zack/priv_sep)
     Finished test [unoptimized + debuginfo] target(s) in 1.43s
      Running unittests src/lib.rs (target/debug/deps/priv_sep-dcb151b099a76f20)
 
