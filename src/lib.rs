@@ -186,7 +186,7 @@ impl Display for Promise {
 ///
 /// # Errors
 ///
-/// Returns [`Error`] iff `pledge(2)` errors.
+/// Returns [`io::Error`] iff `pledge(2)` errors.
 #[inline]
 #[allow(unsafe_code, clippy::indexing_slicing, clippy::option_if_let_else)]
 pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::Error> {
@@ -367,7 +367,7 @@ fn unveil<P: AsRef<Path>, const N: usize>(
 ///
 /// # Errors
 ///
-/// Returns [`Error`] when a problem occurs.
+/// Returns [`io::Error`] when a problem occurs.
 #[allow(clippy::unreachable)]
 #[inline]
 pub fn unveil_no_more() -> Result<(), io::Error> {
