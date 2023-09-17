@@ -182,7 +182,7 @@ impl Display for Promise {
     }
 }
 /// Invokes [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) always passing in
-/// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some([])`
+/// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some(&[])`
 /// is passed, then `""` is passed for `promises`. Like the system call it wraps, duplicates are ignored.
 ///
 /// # Errors
