@@ -41,6 +41,7 @@
     clippy::arithmetic_side_effects,
     clippy::blanket_clippy_restriction_lints,
     clippy::implicit_return,
+    clippy::into_iter_on_ref,
     clippy::min_ident_chars,
     clippy::missing_trait_methods,
     clippy::unseparated_literal_suffix
@@ -140,7 +141,7 @@ pub enum Promise {
 impl Display for Promise {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        match *self {
             Audio => f.write_str("pledge(2) 'audio' promise"),
             Bpf => f.write_str("pledge(2) 'bpf' promise"),
             Chown => f.write_str("pledge(2) 'chown' promise"),
@@ -189,7 +190,7 @@ impl Display for Promise {
 /// Returns [`io::Error`] iff `pledge(2)` errors.
 #[inline]
 #[allow(unsafe_code, clippy::indexing_slicing, clippy::option_if_let_else)]
-pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::Error> {
+pub fn pledge(promises: Option<&[Promise]>) -> Result<(), io::Error> {
     extern "C" {
         fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
     }
@@ -197,7 +198,7 @@ pub fn pledge<const N: usize>(promises: Option<[Promise; N]>) -> Result<(), io::
     let ptr = if let Some(prom) = promises {
         let mut p = Vec::new();
         prom.into_iter().fold((), |(), promise| {
-            p.extend_from_slice(match promise {
+            p.extend_from_slice(match *promise {
                 Audio => b"audio ",
                 Bpf => b"bpf ",
                 Chown => b"chown ",
@@ -278,7 +279,7 @@ pub enum Permission {
 impl Display for Permission {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        match *self {
             Self::Create => f.write_str("unveil(2) 'c' permission"),
             Self::Execute => f.write_str("unveil(2) 'x' permission"),
             Self::Read => f.write_str("unveil(2) 'r' permission"),
