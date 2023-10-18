@@ -40,15 +40,15 @@ laptop$ cd priv_sep/
 laptop$ cargo build --release
     Updating crates.io index
    Compiling semver v1.0.18
-   Compiling libc v0.2.148
+   Compiling libc v0.2.149
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.6.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.7.0 (/home/zack/priv_sep)
     Finished release [optimized] target(s) in 1.90s
 laptop$ touch /home/zack/foo.txt && cargo t && rm /home/zack/foo.txt
    Compiling semver v1.0.18
-   Compiling libc v0.2.148
+   Compiling libc v0.2.149
    Compiling rustc_version v0.4.0
-   Compiling priv_sep v0.6.0 (/home/zack/priv_sep)
+   Compiling priv_sep v0.7.0 (/home/zack/priv_sep)
     Finished test [unoptimized + debuginfo] target(s) in 1.43s
      Running unittests src/lib.rs (target/debug/deps/priv_sep-dcb151b099a76f20)
 

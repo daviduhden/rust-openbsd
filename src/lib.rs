@@ -62,7 +62,7 @@ use Promise::{
     Tmppath, Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
 };
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2).
 pub enum Promise {
     /// Consult `pledge(2)`.
@@ -182,7 +182,7 @@ impl Display for Promise {
     }
 }
 /// Invokes [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) always passing in
-/// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some(&[])`
+/// `NULL` for `execpromises`. When `None` is passed, then `NULL` is passed for `promises`. When `Some([].as_slice())`
 /// is passed, then `""` is passed for `promises`. Like the system call it wraps, duplicates are ignored.
 ///
 /// # Errors
@@ -265,7 +265,7 @@ pub fn pledge(promises: Option<&[Promise]>) -> Result<(), io::Error> {
 }
 /// A `permission` to [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
 #[allow(clippy::exhaustive_enums)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Permission {
     /// Consult `unveil(2)`.
     Create,
@@ -292,18 +292,18 @@ impl Display for Permission {
 #[derive(Debug)]
 pub enum UnveilErr {
     /// Error propagated from [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
-    Error(io::Error),
+    Io(io::Error),
     /// Error when a path cannot be converted into a
     /// [`CString`].
-    NulError(NulError),
+    Nul(NulError),
 }
 impl Display for UnveilErr {
     #[allow(clippy::ref_patterns)]
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::Error(ref err) => err.fmt(f),
-            Self::NulError(ref e) => write!(
+            Self::Io(ref err) => err.fmt(f),
+            Self::Nul(ref e) => write!(
                 f,
                 "The path passed to 'unveil(2)' was unable to be converted to a CString: {e}"
             ),
@@ -351,7 +351,7 @@ fn unveil<P: AsRef<Path>, const N: usize>(
                 perm_c = unsafe { CString::from_vec_with_nul_unchecked(v) };
                 (path_c.as_ptr(), perm_c.as_ptr())
             }
-            Err(e) => return Err(UnveilErr::NulError(e)),
+            Err(e) => return Err(UnveilErr::Nul(e)),
         }
     } else {
         (ptr::null(), ptr::null())
@@ -361,7 +361,7 @@ fn unveil<P: AsRef<Path>, const N: usize>(
     // fst and snd meet the requirements of the unveil(2) call.
     match unsafe { unveil(fst, snd) } {
         0i32 => Ok(()),
-        _ => Err(UnveilErr::Error(io::Error::last_os_error())),
+        _ => Err(UnveilErr::Io(io::Error::last_os_error())),
     }
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `NULL` for both `path` and `permissions`.
@@ -373,8 +373,8 @@ fn unveil<P: AsRef<Path>, const N: usize>(
 #[inline]
 pub fn unveil_no_more() -> Result<(), io::Error> {
     unveil::<PathBuf, 0>(None, []).map_err(|e| match e {
-        UnveilErr::Error(err) => err,
-        UnveilErr::NulError(_) => unreachable!("There is a bug in unveil."),
+        UnveilErr::Io(err) => err,
+        UnveilErr::Nul(_) => unreachable!("There is a bug in unveil."),
     })
 }
 /// Invokes [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) by passing `path` for `path` and `""` for `permissions`.
