@@ -581,25 +581,31 @@ impl Permissions {
     /// Returns [`NulError`] iff [`CString::new`] does.
     /// Returns [`io::Error`] iff `unveil(2)` errors.
     #[inline]
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, clippy::as_conversions, clippy::cast_lossless)]
     pub fn unveil<P: AsRef<Path>>(self, path: P) -> Result<(), UnveilErr> {
-        let mut vec = Vec::new();
-        if self.create {
-            vec.push(b'c');
-        }
-        if self.execute {
-            vec.push(b'x');
-        }
-        if self.read {
-            vec.push(b'r');
-        }
-        if self.write {
-            vec.push(b'w');
-        }
-        vec.push(0);
         CString::new(path.as_ref().as_os_str().as_bytes()).map_or_else(
             |e| Err(UnveilErr::Nul(e)),
             |path_c| {
+                let mut vec = Vec::with_capacity(
+                    self.create as usize
+                        + self.execute as usize
+                        + self.read as usize
+                        + self.write as usize
+                        + 1,
+                );
+                if self.create {
+                    vec.push(b'c');
+                }
+                if self.execute {
+                    vec.push(b'x');
+                }
+                if self.read {
+                    vec.push(b'r');
+                }
+                if self.write {
+                    vec.push(b'w');
+                }
+                vec.push(0);
                 // SAFETY:
                 // `vec` was populated above with correct ASCII-encoding of the literal
                 // values all of which do not have 0 bytes.
