@@ -36,11 +36,8 @@
     clippy::suspicious
 )]
 #![allow(
-    clippy::arithmetic_side_effects,
     clippy::blanket_clippy_restriction_lints,
-    clippy::exhaustive_structs,
     clippy::implicit_return,
-    clippy::into_iter_on_ref,
     clippy::min_ident_chars,
     clippy::missing_trait_methods,
     clippy::single_char_lifetime_names,
@@ -49,16 +46,15 @@
 #![cfg(feature = "openbsd")]
 extern crate alloc;
 use alloc::ffi::{CString, NulError};
-use core::convert::AsRef;
-use core::ffi::{c_char, c_int};
-use core::fmt::{self, Display, Formatter};
-use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref, Not};
-use core::ptr;
-use core::slice::Iter;
-use std::error;
-use std::io;
-use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use core::{
+    convert::AsRef,
+    ffi::{c_char, c_int},
+    fmt::{self, Display, Formatter},
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref, Not},
+    ptr,
+    slice::Iter,
+};
+use std::{error, io, os::unix::ffi::OsStrExt, path::Path};
 use Promise::{
     Audio, Bpf, Chown, Cpath, Disklabel, Dns, Dpath, Drm, Error, Exec, Fattr, Flock, Getpw, Id,
     Inet, Mcast, Pf, Proc, ProtExec, Ps, Recvfd, Route, Rpath, Sendfd, Settime, Stdio, Tape,
@@ -184,6 +180,18 @@ impl Display for Promise {
         }
     }
 }
+impl PartialEq<&Self> for Promise {
+    #[inline]
+    fn eq(&self, other: &&Self) -> bool {
+        *self == **other
+    }
+}
+impl PartialEq<Promise> for &Promise {
+    #[inline]
+    fn eq(&self, other: &Promise) -> bool {
+        **self == *other
+    }
+}
 /// A set of [`Promise`]s that can only have `Promise`s removed after creation.
 ///
 /// Once a set of `promises` has been [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2)d,
@@ -192,6 +200,7 @@ impl Display for Promise {
 #[derive(Clone, Copy, Debug)]
 pub struct Promises<const CAP: usize> {
     /// The initial set of `Promise`s.
+    /// `Promise`s starting from `len` are ones that have been "removed".
     proms: [Promise; CAP],
     /// The length of `vals`.
     len: usize,
@@ -219,32 +228,59 @@ fn pledge(promises: *const c_char) -> Result<(), io::Error> {
     }
 }
 impl<const CAP: usize> Promises<CAP> {
-    /// Returns a `Promises` containing the unique
-    /// `Promise`s in `initial`.
+    /// Returns a `Promises` containing the unique `Promise`s in `initial`.
     ///
-    /// Note that the order of `initial` may
-    /// not be retained.
-    #[allow(clippy::indexing_slicing)]
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Stdio]).len() == 1);
+    /// ```
+    #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
     #[inline]
     #[must_use]
     pub fn new(mut initial: [Promise; CAP]) -> Self {
+        // This is the first index where "removed" items begin.
         let mut len = CAP;
+        // We "remove" duplicates by putting them at the end of `initial`.
         for i in 0..CAP {
+            // We don't want to "remove" items that have been "removed" already.
             if len > i {
+                // We start at one past the current index.
+                // No fear of overflow since the max value of `i` is one less than `CAP`.
                 let mut start = i + 1;
+                // We must check all items after `i`. When we find an item that is the same,
+                // we "remove" it by replacing it with the last active item. This is achieved by
+                // decrementing `len` (since we know we are removing one). By decrementing `len`,
+                // `len` becomes the last index of an active item which then allows us to swap it
+                // with the duplicate item. We keep the index the same in this situation since we need
+                // to check this item that has been swapped.
                 loop {
+                    // We don't want to "remove" items that have been "removed" already.
                     if len > start {
+                        // Check if the item at `start` is a duplicate.
+                        // `i` is less than `CAP`, so indexing `initial` with it won't `panic`.
+                        // `len` is always less than or equal to `CAP`, and `start` is less than it;
+                        // so indexing `initial` with `start` won't `panic`.
                         if initial[i] == initial[start] {
+                            // We "remove" the item at `start` by swapping it with the last item.
+                            // No fear of underflow since `start` is positive and `len` is greater than it.
                             len -= 1;
                             initial.swap(start, len);
                         } else {
+                            // The item at `start` is not the same as the item at `i`, so we check the next
+                            // item.
+                            // No fear of overflow since `start` is less than `len` which is less than or
+                            // equal to `CAP`.
                             start += 1;
                         }
                     } else {
+                        // We have checked all items after `i`, so we move on to the next.
                         break;
                     }
                 }
             } else {
+                // We have "removed" all duplicate items.
                 break;
             }
         }
@@ -254,24 +290,54 @@ impl<const CAP: usize> Promises<CAP> {
         }
     }
     /// Returns the number of [`Promise`]s.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Stdio]).len() == 1);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn len(&self) -> usize {
         self.len
     }
     /// Returns `true` iff there are no [`Promise`]s.
+    /// Returns the number of [`Promise`]s.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::Promises;
+    /// assert!(Promises::new([]).is_empty());
+    /// ```
     #[inline]
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
     /// Returns the set of `Promise`s.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Stdio]).vals().first().map_or(false, |promise| promise == Promise::Stdio));
+    /// ```
     #[inline]
     #[must_use]
     pub fn vals(&self) -> &[Promise] {
         &self.proms[..self.len]
     }
     /// Returns `true` iff `self` contains `promise`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Stdio]).contains(Promise::Stdio));
+    /// assert!(!Promises::new([Promise::Stdio]).contains(Promise::Rpath));
+    /// ```
     #[inline]
     #[must_use]
     pub fn contains(&self, promise: Promise) -> bool {
@@ -279,33 +345,95 @@ impl<const CAP: usize> Promises<CAP> {
     }
     /// Removes all [`Promise`]s except `promises`.
     ///
-    /// Note that the internal order of `Promise`s
-    /// may no longer be the same.
+    /// Note that the internal order of `Promise`s may no longer be the same.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// let mut proms = Promises::new([Promise::Rpath, Promise::Stdio]);
+    /// proms.retain(Promises::new([Promise::Stdio]));
+    /// assert!(proms.len() == 1 && proms[0] == Promise::Stdio);
+    /// ```
+    #[allow(clippy::arithmetic_side_effects)]
     #[inline]
     pub fn retain<P: AsRef<[Promise]>>(&mut self, promises: P) {
         let other = promises.as_ref();
+        // We "check" if an item is in `promises`. If it is not, we "remove" it by swapping it with the
+        // the last item.
         for i in 0..self.len {
+            // Since we swap items, we must re-check `i` with the item it was swapped with.
             loop {
                 let Some(prom) = self.vals().get(i) else {
+                    // We have no more items to check, so we are done.
                     return;
                 };
                 if other.contains(prom) {
+                    // `prom` needs to be retained, so we move to the next item.
                     break;
                 }
+                // `prom` needs to be "removed", so we swap it with the last item and do the process again.
+                // `len` is at least 1; otherwise `self.vals().get(i)` would have returned `None` so this
+                // won't underflow.
                 self.len -= 1;
                 self.proms.swap(i, self.len);
             }
         }
     }
+    /// Same as [`Self::retain`] then [`Self::pledge`]; however this is "atomic" in that if an error occurs from `pledge`,
+    /// `self` is left unchanged. This is useful when one wants to "recover" from an error since there is no
+    /// way to add `Promise`s back forcing one to have to create a second `Promises`.
+    ///
+    /// Note that when `retain` doesn't change `self`, `pledge` is not called.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] iff `pledge` does.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).retain_then_pledge([Promise::Rpath]).is_ok());
+    /// ```
+    #[inline]
+    pub fn retain_then_pledge<P: AsRef<[Promise]>>(
+        &mut self,
+        promises: P,
+    ) -> Result<(), io::Error> {
+        // We opt for the easy way by copying `self`. This should be the fastest for the
+        // typical case since `self` likely has very few `Promise`s, and it makes for less code.
+        let cur = *self;
+        self.retain(promises);
+        if self.len < cur.len {
+            self.pledge().map_err(|err| {
+                *self = cur;
+                err
+            })
+        } else {
+            Ok(())
+        }
+    }
     /// Removes `promises` from `self`.
     ///
-    /// Note that the internal order of `Promise`s
-    /// may no longer be the same.
+    /// Note that the internal order of `Promise`s may no longer be the same.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// let mut proms = Promises::new([Promise::Rpath, Promise::Stdio]);
+    /// proms.remove_promises(Promises::new([Promise::Stdio]));
+    /// assert!(proms.len() == 1 && proms[0] == Promise::Rpath);
+    /// ```
+    #[allow(clippy::arithmetic_side_effects, clippy::into_iter_on_ref)]
     #[inline]
     pub fn remove_promises<P: AsRef<[Promise]>>(&mut self, promises: P) {
         promises.as_ref().into_iter().fold((), |(), prom| {
             for (idx, prom2) in self.vals().into_iter().enumerate() {
+                // We must "remove" the item.
                 if prom == prom2 {
+                    // `len` is at least one; otherwise `self.vals().into_iter()` would have iterated `None`.
                     self.len -= 1;
                     self.proms.swap(idx, self.len);
                     break;
@@ -313,23 +441,109 @@ impl<const CAP: usize> Promises<CAP> {
             }
         });
     }
-    /// Removes `promise` from `self` returning `true` iff
-    /// `promise` existed.
+    /// Same as [`Self::remove_promises`] then [`Self::pledge`]; however this is "atomic" in that if an error occurs from
+    /// `pledge`, `self` is left unchanged. This is useful when one wants to "recover" from an error since there
+    /// is no way to add `Promise`s back forcing one to have to create a second `Promises`.
     ///
-    /// Note that the internal order of `Promise`s
-    /// may no longer be the same.
+    /// Note that when `remove_promises` doesn't remove any, `pledge` is not called.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] iff `pledge` does.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).remove_promises_then_pledge([Promise::Rpath]).is_ok());
+    /// ```
+    #[inline]
+    pub fn remove_promises_then_pledge<P: AsRef<[Promise]>>(
+        &mut self,
+        promises: P,
+    ) -> Result<(), io::Error> {
+        // We opt for the easy way by copying `self`. This should be the fastest for the
+        // typical case since `self` likely has very few `Promise`s, and it makes for less code.
+        let cur = *self;
+        self.remove_promises(promises);
+        if self.len() < cur.len {
+            self.pledge().map_err(|err| {
+                *self = cur;
+                err
+            })
+        } else {
+            Ok(())
+        }
+    }
+    /// Removes `promise` from `self` returning `true` iff `promise` existed.
+    ///
+    /// Note that the internal order of `Promise`s  may no longer be the same.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// let mut proms = Promises::new([Promise::Rpath, Promise::Stdio]);
+    /// assert!(proms.remove(Promise::Stdio));
+    /// assert!(proms.len() == 1 && proms[0] == Promise::Rpath);
+    /// ```
+    #[allow(clippy::arithmetic_side_effects, clippy::into_iter_on_ref)]
     #[inline]
     pub fn remove(&mut self, promise: Promise) -> bool {
         for (idx, prom) in self.vals().into_iter().enumerate() {
+            // We must "remove" `prom`.
             if *prom == promise {
+                // `len` is at least one; otherwise `self.vals().into_iter()` would have iterated `None`.
                 self.len -= 1;
                 self.proms.swap(idx, self.len);
+                // Since `self` contains unique `Promise`s, we don't have to check any more.
                 return true;
             }
         }
         false
     }
+    /// Same as [`Self::remove`] then [`Self::pledge`]; however this is "atomic" in that if an error occurs from `pledge`,
+    /// `self` is left unchanged. This is useful when one wants to "recover" from an error since there is no
+    /// way to add `Promise`s back forcing one to have to create a second `Promises`.
+    ///
+    /// The contained `bool` in `Ok` is `true` iff `remove` returned `true`. Note that when `remove` returns
+    /// `false`, `pledge` is not called.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] iff `pledge` does.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).remove_then_pledge(Promise::Rpath).is_ok());
+    /// ```
+    #[inline]
+    pub fn remove_then_pledge(&mut self, promise: Promise) -> Result<bool, io::Error> {
+        // We opt for the easy way by copying `self`. This should be the fastest for the
+        // typical case since `self` likely has very few `Promise`s, and it makes for less code.
+        let cur = *self;
+        if self.remove(promise) {
+            self.pledge()
+                .map_err(|err| {
+                    *self = cur;
+                    err
+                })
+                .map(|()| true)
+        } else {
+            Ok(false)
+        }
+    }
     /// Returns an [`Iterator`] without consuming `self`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).iter().next().map_or(false, |prom| prom == Promise::Rpath));
+    /// ```
+    #[allow(clippy::into_iter_on_ref)]
     #[inline]
     pub fn iter(&self) -> Iter<'_, Promise> {
         self.vals().into_iter()
@@ -340,8 +554,20 @@ impl<const CAP: usize> Promises<CAP> {
     /// # Errors
     ///
     /// Returns [`io::Error`] iff `pledge(2)` errors.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use priv_sep::{Promise, Promises};
+    /// assert!(Promises::new([Promise::Stdio]).pledge().is_ok());
+    /// ```
     #[inline]
-    #[allow(unsafe_code, clippy::indexing_slicing)]
+    #[allow(
+        unsafe_code,
+        clippy::arithmetic_side_effects,
+        clippy::indexing_slicing,
+        clippy::into_iter_on_ref
+    )]
     pub fn pledge(&self) -> Result<(), io::Error> {
         let mut p = Vec::new();
         self.vals().into_iter().fold((), |(), promise| {
@@ -391,6 +617,7 @@ impl<const CAP: usize> Promises<CAP> {
             // All promises have a space after them which means
             // we must replace the last promise's space with
             // 0/nul byte.
+            // `idx` is at least 1 based on the above check.
             p[idx - 1] = 0;
         }
         // SAFETY:
@@ -440,24 +667,31 @@ pub struct PromIter<const CAP: usize> {
 }
 impl<const CAP: usize> Iterator for PromIter<CAP> {
     type Item = Promise;
+    #[allow(clippy::arithmetic_side_effects)]
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.prom.vals().get(self.idx).map(|prom| {
+            // `idx` must be less than `CAP`, since `get` returned `Some`.
             self.idx += 1;
             *prom
         })
     }
 }
 impl<const CAP: usize> ExactSizeIterator for PromIter<CAP> {
+    #[allow(clippy::arithmetic_side_effects)]
     #[inline]
     fn len(&self) -> usize {
+        // `idx` is <= `len`.
         self.prom.len - self.idx
     }
 }
 impl<const CAP: usize> DoubleEndedIterator for PromIter<CAP> {
+    #[allow(clippy::arithmetic_side_effects)]
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.prom.proms[self.idx..self.prom.len].last().map(|prom| {
+            // `len` is at least 1; otherwise the above slice would be empty which means `last` would
+            // have returned `None`.
             self.prom.len -= 1;
             *prom
         })
@@ -491,6 +725,13 @@ impl<const CAP: usize> From<[Promise; CAP]> for Promises<CAP> {
 /// # Errors
 ///
 /// Returns [`io::Error`] iff `pledge(2)` errors.
+///
+/// # Example
+///
+/// ```no_run
+/// use priv_sep;
+/// assert!(priv_sep::pledge_none().is_ok());
+/// ```
 #[inline]
 pub fn pledge_none() -> Result<(), io::Error> {
     // `NULL` is always valid for `promises`.
@@ -518,7 +759,7 @@ fn unveil(path: *const c_char, permissions: *const c_char) -> Result<(), io::Err
     }
 }
 /// `permissions` to [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
-#[allow(clippy::struct_excessive_bools)]
+#[allow(clippy::exhaustive_structs, clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Permissions {
     /// Consult `unveil(2)`.
@@ -580,12 +821,34 @@ impl Permissions {
     ///
     /// Returns [`NulError`] iff [`CString::new`] does.
     /// Returns [`io::Error`] iff `unveil(2)` errors.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::io::ErrorKind;
+    /// use priv_sep::{Permissions, UnveilErr};
+    /// assert!(Permissions::READ.unveil("/path/to/read").is_ok());
+    /// assert!(Permissions::READ.unveil("/path/does/not/exist").map_or_else(
+    ///     |err| match err {
+    ///         UnveilErr::Io(e) => e.kind() == ErrorKind::NotFound,
+    ///         UnveilErr::Nul(_) => false,
+    ///     },
+    ///     |_| false
+    /// ));
+    /// ```
     #[inline]
-    #[allow(unsafe_code, clippy::as_conversions, clippy::cast_lossless)]
+    #[allow(
+        unsafe_code,
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::cast_lossless
+    )]
     pub fn unveil<P: AsRef<Path>>(self, path: P) -> Result<(), UnveilErr> {
         CString::new(path.as_ref().as_os_str().as_bytes()).map_or_else(
             |e| Err(UnveilErr::Nul(e)),
             |path_c| {
+                // `true as usize` is guaranteed to return 1, and `false as usize` is guaranteed to return
+                // 0. This means the max sum is 5.
                 let mut vec = Vec::with_capacity(
                     self.create as usize
                         + self.execute as usize
@@ -794,6 +1057,18 @@ impl Not for &Permissions {
         !*self
     }
 }
+impl PartialEq<&Self> for Permissions {
+    #[inline]
+    fn eq(&self, other: &&Self) -> bool {
+        *self == **other
+    }
+}
+impl PartialEq<Permissions> for &Permissions {
+    #[inline]
+    fn eq(&self, other: &Permissions) -> bool {
+        **self == *other
+    }
+}
 /// Error returned by [`Permissions::unveil`].
 #[allow(clippy::exhaustive_enums)]
 #[derive(Debug)]
@@ -823,6 +1098,13 @@ impl error::Error for UnveilErr {}
 /// # Errors
 ///
 /// Returns [`io::Error`] when a problem occurs.
+///
+/// # Example
+///
+/// ```no_run
+/// use priv_sep;
+/// assert!(priv_sep::unveil_no_more().is_ok());
+/// ```
 #[inline]
 pub fn unveil_no_more() -> Result<(), io::Error> {
     // `NULL` is valid for both `path` and `permissions`.

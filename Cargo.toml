@@ -9,14 +9,14 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-version = "0.8.1"
+version = "1.0.0"
 
 [lib]
 name = "priv_sep"
 path = "src/lib.rs"
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
-libc = { version = "0.2.150", default-features = false, features = ["std"], optional = true }
+libc = { version = "0.2.153", default-features = false, features = ["std"], optional = true }
 
 [build-dependencies]
 rustc_version = "0.4.0"
