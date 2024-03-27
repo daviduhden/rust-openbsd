@@ -21,6 +21,14 @@
 //! Any error returned from the underlying system call is propagated via [`io::Error`].
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 #![deny(
+    future_incompatible,
+    let_underscore,
+    missing_docs,
+    nonstandard_style,
+    rust_2018_compatibility,
+    rust_2018_idioms,
+    rust_2021_compatibility,
+    rust_2024_compatibility,
     unsafe_code,
     unused,
     warnings,

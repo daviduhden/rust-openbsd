@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-version = "1.0.0"
+version = "1.0.1"
 
 [lib]
 name = "priv_sep"
