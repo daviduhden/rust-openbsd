@@ -9,30 +9,21 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-version = "1.0.1"
-
-[lib]
-name = "priv_sep"
-path = "src/lib.rs"
-
-[target.'cfg(target_os = "openbsd")'.dependencies]
-libc = { version = "0.2.153", default-features = false, features = ["std"], optional = true }
-
-[build-dependencies]
-rustc_version = "0.4.0"
-
-[features]
-openbsd = ["dep:libc"]
-default = ["openbsd"]
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rust-version = "1.77.0"
+version = "2.0.0"
 
 [badges]
 maintenance = { status = "actively-developed" }
 
-[profile.release]
-lto = true
-panic = 'abort'
-strip = true
+[package.metadata.docs.rs]
+all-features = true
+
+[target.'cfg(target_os = "openbsd")'.dependencies]
+libc = { version = "0.2.158", default-features = false, features = ["std"], optional = true }
+
+[build-dependencies]
+rustc_version = { version = "0.4.0", default-features = false }
+
+[features]
+openbsd = ["dep:libc"]
+default = ["openbsd"]
