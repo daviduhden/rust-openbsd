@@ -19,7 +19,7 @@
 //! ## Errors
 //!
 //! Any error returned from the underlying system call is propagated via [`io::Error`].
-#![cfg_attr(all(doc, channel_nightly), feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(
     unknown_lints,
     future_incompatible,
@@ -45,28 +45,34 @@
     clippy::style,
     clippy::suspicious
 )]
-#![allow(
+#![expect(
     clippy::blanket_clippy_restriction_lints,
     clippy::doc_markdown,
-    clippy::exhaustive_structs,
+    reason = "same reason as below"
+)]
+#![cfg_attr(docsrs, doc(cfg(feature = "openbsd")))]
+#![cfg(feature = "openbsd")]
+#![expect(
+    clippy::exhaustive_enums,
     clippy::implicit_return,
     clippy::min_ident_chars,
     clippy::missing_trait_methods,
-    clippy::single_call_fn,
+    clippy::ref_patterns,
     clippy::single_char_lifetime_names,
-    clippy::unseparated_literal_suffix
+    clippy::unseparated_literal_suffix,
+    reason = "noisy, opinionated, and likely doesn't prevent bugs or improve APIs"
 )]
-#![cfg(feature = "openbsd")]
 extern crate alloc;
 use alloc::ffi::{CString, NulError};
 use core::{
     convert::AsRef,
+    error,
     ffi::{c_char, c_int},
     fmt::{self, Display, Formatter},
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
     ptr,
 };
-use std::{error, io, os::unix::ffi::OsStrExt, path::Path};
+use std::{io, os::unix::ffi::OsStrExt, path::Path};
 use Promise::{
     Audio, Bpf, Chown, Cpath, Disklabel, Dns, Dpath, Drm, Error, Exec, Fattr, Flock, Getpw, Id,
     Inet, Mcast, Pf, Proc, ProtExec, Ps, Recvfd, Route, Rpath, Sendfd, Settime, Stdio, Tape,
@@ -259,7 +265,7 @@ pub struct Promises(u64);
 ///
 /// This function MUST only be called by `Promises::pledge` and
 /// `pledge_none`.
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "FFI requires unsafe code")]
 fn pledge(promises: *const c_char) -> Result<(), io::Error> {
     extern "C" {
         fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
@@ -429,10 +435,7 @@ impl Promises {
         if *self == cur {
             Ok(())
         } else {
-            self.pledge().map_err(|err| {
-                *self = cur;
-                err
-            })
+            self.pledge().inspect_err(|_| *self = cur)
         }
     }
     /// Removes all `Promise`s in `promises` from `self`.
@@ -480,10 +483,7 @@ impl Promises {
         if *self == cur {
             Ok(())
         } else {
-            self.pledge().map_err(|err| {
-                *self = cur;
-                err
-            })
+            self.pledge().inspect_err(|_| *self = cur)
         }
     }
     /// Removes `promise` from `self`.
@@ -523,10 +523,7 @@ impl Promises {
         if *self == cur {
             Ok(())
         } else {
-            self.pledge().map_err(|err| {
-                *self = cur;
-                err
-            })
+            self.pledge().inspect_err(|_| *self = cur)
         }
     }
     /// Invokes [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) always passing in
@@ -542,12 +539,19 @@ impl Promises {
     /// # use priv_sep::{Promise, Promises};
     /// assert!(Promises::new([Promise::Stdio]).pledge().is_ok());
     /// ```
-    #[allow(
+    #[expect(
         unsafe_code,
+        reason = "we manually construct a valid CString and ensure its safety"
+    )]
+    #[expect(
         clippy::arithmetic_side_effects,
-        clippy::cognitive_complexity,
         clippy::indexing_slicing,
-        clippy::too_many_lines
+        reason = "we replace a trailing space with 0 to ensure CString is correctly constructed"
+    )]
+    #[expect(
+        clippy::cognitive_complexity,
+        clippy::too_many_lines,
+        reason = "many if blocks to handle each Promise"
     )]
     #[inline]
     pub fn pledge(&self) -> Result<(), io::Error> {
@@ -712,7 +716,7 @@ pub fn pledge_none() -> Result<(), io::Error> {
 ///
 /// This function MUST only be called by the functions `Permissions::unveil` and
 /// `unveil_no_more`.
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "FFI requires unsafe code")]
 fn unveil(path: *const c_char, permissions: *const c_char) -> Result<(), io::Error> {
     extern "C" {
         fn unveil(path: *const c_char, permissions: *const c_char) -> c_int;
@@ -729,7 +733,6 @@ fn unveil(path: *const c_char, permissions: *const c_char) -> Result<(), io::Err
     }
 }
 /// A permission in [`Permissions`].
-#[allow(clippy::exhaustive_enums)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Permission {
     /// [c](https://man.openbsd.org/amd64/unveil.2#c).
@@ -860,7 +863,14 @@ impl Permissions {
     ///     |()| false
     /// ));
     /// ```
-    #[allow(unsafe_code, clippy::arithmetic_side_effects)]
+    #[expect(
+        unsafe_code,
+        reason = "we manually construct a valid CString and ensure its safety"
+    )]
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "we pre-allocate a Vec with the exact capacity which is capped at 5"
+    )]
     #[inline]
     pub fn unveil<P: AsRef<Path>>(self, path: P) -> Result<(), UnveilErr> {
         CString::new(path.as_ref().as_os_str().as_bytes()).map_or_else(
@@ -1075,7 +1085,6 @@ impl PartialEq<Permissions> for &Permissions {
     }
 }
 /// Error returned by [`Permissions::unveil`].
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug)]
 pub enum UnveilErr {
     /// Error propagated from [`unveil(2)`](https://man.openbsd.org/amd64/unveil.2).
@@ -1085,7 +1094,6 @@ pub enum UnveilErr {
     Nul(NulError),
 }
 impl Display for UnveilErr {
-    #[allow(clippy::ref_patterns)]
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {

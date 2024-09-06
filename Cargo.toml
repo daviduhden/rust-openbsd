@@ -9,21 +9,24 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-rust-version = "1.77.0"
-version = "2.0.0"
+rust-version = "1.81.0"
+version = "2.1.0"
 
 [badges]
 maintenance = { status = "actively-developed" }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
 libc = { version = "0.2.158", default-features = false, features = ["std"], optional = true }
 
-[build-dependencies]
-rustc_version = { version = "0.4.0", default-features = false }
+
+### FEATURES #################################################################
 
 [features]
-openbsd = ["dep:libc"]
 default = ["openbsd"]
+
+# Provide pledge and unveil support for OpenBSD.
+openbsd = ["dep:libc"]
