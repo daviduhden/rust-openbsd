@@ -1,4 +1,8 @@
-//! # `priv_sep`
+//! [![git]](https://git.philomathiclife.com/priv_sep/log.html)&ensp;[![crates-io]](https://crates.io/crates/priv_sep)&ensp;[![docs-rs]](crate)
+//!
+//! [git]: https://git.philomathiclife.com/git_badge.svg
+//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
+//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
 //!
 //! `priv_sep` is a library for privilege separation.
 //! It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
@@ -47,22 +51,26 @@
 )]
 #![expect(
     clippy::blanket_clippy_restriction_lints,
-    clippy::doc_markdown,
     reason = "same reason as below"
 )]
 #![cfg_attr(docsrs, doc(cfg(feature = "openbsd")))]
 #![cfg(feature = "openbsd")]
 #![expect(
+    clippy::arbitrary_source_item_ordering,
     clippy::exhaustive_enums,
     clippy::implicit_return,
     clippy::min_ident_chars,
     clippy::missing_trait_methods,
     clippy::ref_patterns,
-    clippy::single_char_lifetime_names,
     clippy::unseparated_literal_suffix,
     reason = "noisy, opinionated, and likely doesn't prevent bugs or improve APIs"
 )]
 extern crate alloc;
+use Promise::{
+    Audio, Bpf, Chown, Cpath, Disklabel, Dns, Dpath, Drm, Error, Exec, Fattr, Flock, Getpw, Id,
+    Inet, Mcast, Pf, Proc, ProtExec, Ps, Recvfd, Route, Rpath, Sendfd, Settime, Stdio, Tape,
+    Tmppath, Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
+};
 use alloc::ffi::{CString, NulError};
 use core::{
     convert::AsRef,
@@ -72,12 +80,7 @@ use core::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
     ptr,
 };
-use std::{io, os::unix::ffi::OsStrExt, path::Path};
-use Promise::{
-    Audio, Bpf, Chown, Cpath, Disklabel, Dns, Dpath, Drm, Error, Exec, Fattr, Flock, Getpw, Id,
-    Inet, Mcast, Pf, Proc, ProtExec, Ps, Recvfd, Route, Rpath, Sendfd, Settime, Stdio, Tape,
-    Tmppath, Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
-};
+use std::{io, os::unix::ffi::OsStrExt as _, path::Path};
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
@@ -267,7 +270,7 @@ pub struct Promises(u64);
 /// `pledge_none`.
 #[expect(unsafe_code, reason = "FFI requires unsafe code")]
 fn pledge(promises: *const c_char) -> Result<(), io::Error> {
-    extern "C" {
+    unsafe extern "C" {
         fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
     }
     // SAFETY:
@@ -497,7 +500,7 @@ impl Promises {
     /// assert!(proms.len() == 1 && proms.contains(Promise::Rpath));
     /// ```
     #[inline]
-    pub fn remove(&mut self, promise: Promise) {
+    pub const fn remove(&mut self, promise: Promise) {
         self.0 &= !promise.to_u64();
     }
     /// Same as [`Self::remove`] then [`Self::pledge`]; however this is "atomic" in that if an error occurs from `pledge`,
@@ -718,7 +721,7 @@ pub fn pledge_none() -> Result<(), io::Error> {
 /// `unveil_no_more`.
 #[expect(unsafe_code, reason = "FFI requires unsafe code")]
 fn unveil(path: *const c_char, permissions: *const c_char) -> Result<(), io::Error> {
-    extern "C" {
+    unsafe extern "C" {
         fn unveil(path: *const c_char, permissions: *const c_char) -> c_int;
     }
     // SAFETY:
@@ -802,7 +805,7 @@ impl Permissions {
     /// assert_eq!(perms, Permissions::READ);
     /// ```
     #[inline]
-    pub fn enable(&mut self, permission: Permission) {
+    pub const fn enable(&mut self, permission: Permission) {
         self.0 |= permission.to_u8();
     }
     /// Disables `permission` in `self`.
@@ -822,7 +825,7 @@ impl Permissions {
     /// assert!(perms.is_enabled(Permission::Create) && perms.is_enabled(Permission::Read) && perms.is_enabled(Permission::Write) && !perms.is_enabled(Permission::Execute));
     /// ```
     #[inline]
-    pub fn disable(&mut self, permission: Permission) {
+    pub const fn disable(&mut self, permission: Permission) {
         self.0 &= !permission.to_u8();
     }
     /// Returns `true` iff `self` has `permission` enabled.
@@ -959,7 +962,7 @@ impl BitAnd<&Permissions> for &Permissions {
         *self & *rhs
     }
 }
-impl<'a> BitAnd<Permissions> for &'a Permissions {
+impl BitAnd<Permissions> for &Permissions {
     type Output = Permissions;
     #[inline]
     fn bitand(self, rhs: Permissions) -> Self::Output {
@@ -999,7 +1002,7 @@ impl BitOr<&Permissions> for &Permissions {
         *self | *rhs
     }
 }
-impl<'a> BitOr<Permissions> for &'a Permissions {
+impl BitOr<Permissions> for &Permissions {
     type Output = Permissions;
     #[inline]
     fn bitor(self, rhs: Permissions) -> Self::Output {
@@ -1039,7 +1042,7 @@ impl BitXor<&Permissions> for &Permissions {
         *self ^ *rhs
     }
 }
-impl<'a> BitXor<Permissions> for &'a Permissions {
+impl BitXor<Permissions> for &Permissions {
     type Output = Permissions;
     #[inline]
     fn bitxor(self, rhs: Permissions) -> Self::Output {
@@ -1147,6 +1150,7 @@ mod tests {
         // This tests that a NULL `promise` does nothing.
         assert!(crate::pledge_none().is_ok());
         print!("");
+        assert!(Promises::ALL.pledge().is_ok());
         // This tests that duplicates are ignored as well as the implementation of PartialEq.
         let mut initial_promises = Promises::new([
             Promise::Stdio,

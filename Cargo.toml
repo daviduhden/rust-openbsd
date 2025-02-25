@@ -3,24 +3,21 @@ authors = ["Zack Newman <zack@philomathiclife.com>"]
 categories = ["development-tools::ffi", "external-ffi-bindings", "os"]
 description = "FFI for pledge(2) and unveil(2) on OpenBSD."
 documentation = "https://docs.rs/priv_sep/latest/priv_sep/"
-edition = "2021"
+edition = "2024"
 keywords = ["ffi", "openbsd", "privsep", "security"]
 license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-rust-version = "1.81.0"
-version = "2.1.0"
-
-[badges]
-maintenance = { status = "actively-developed" }
+rust-version = "1.85.0"
+version = "2.2.0"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
-libc = { version = "0.2.158", default-features = false, features = ["std"], optional = true }
+libc = { version = "0.2.170", default-features = false, features = ["std"], optional = true }
 
 
 ### FEATURES #################################################################
