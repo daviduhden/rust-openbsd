@@ -4,25 +4,87 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/priv_sep.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/priv_sep)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-priv_sep-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/priv_sep/latest/priv_sep/)
 
-`priv_sep` is a library for privilege separation.
-It is currently designed around [`pledge(2)`](https://man.openbsd.org/amd64/pledge.2) and
-[`unveil(2)`](https://man.openbsd.org/amd64/unveil.2) for OpenBSD, but
-in the future may contain functionality for Linux's
-[`seccomp(2)`](https://man7.org/linux/man-pages/man2/seccomp.2.html).
+`priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction.
 
-## Pledge
+## `priv_sep` in action for OpenBSD
 
-Calls to `pledge(2)` are done via `Promises::pledge` and `pledge_none`.
+```rust
+use core::convert::Infallible;
+use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
+use std::{
+    fs,
+    io::Error,
+    net::{Ipv6Addr, SocketAddrV6},
+};
+use tokio::net::TcpListener;
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<Infallible, PrivDropErr<Error>> {
+    /// Config file.
+    const CONFIG: &str = "config";
+    // Get the user ID and group ID for nobody from `passwd(5)`.
+    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
+    // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
+    // Bind to TCP `[::1]:443` as root.
+    // `setresgid(2)` to the group ID associated with nobody.
+    // `setresuid(2)` to the user ID associated with nobody.
+    // Remove `id` from our `pledge(2)`d promises.
+    let (listener, mut promises) = Promises::new_chroot_then_priv_drop_async(
+        "nobody",
+        "/path/chroot/",
+        [Promise::Inet, Promise::Rpath, Promise::Unveil],
+        false,
+        async || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await,
+    ).await?;
+    // At this point, the process is running under nobody.
+    // Only allow file system access to `config` and only allow read access to it.
+    Permissions::READ.unveil(CONFIG)?;
+    // Read `config`.
+    // This will of course fail if the file does not exist or nobody does not
+    // have read permissions.
+    let config = fs::read(CONFIG)?;
+    // Remove file system access.
+    Permissions::NONE.unveil(CONFIG)?;
+    // Remove `rpath` and `unveil` from our `pledge(2)`d promises
+    // (i.e., only have `inet` and `stdio` abilities when we begin accepting TCP connections).
+    promises.remove_promises_then_pledge([Promise::Rpath, Promise::Unveil])?;
+    loop {
+        // Handle TCP connections.
+        if let Ok((_, ip)) = listener.accept().await {
+            assert!(ip.is_ipv6());
+        }
+    }
+}
+```
 
-Note that since the use of `execpromises` is quite rare, `NULL` is always used for it.
+## `priv_sep` in action for Unix-like OSes
 
-## Unveil
-
-Calls to `unveil(2)` are done via `Permissions::unveil` and `unveil_no_more`.
-
-## Errors
-
-Any error returned from the underlying system call is propagated via `Error`.
+```rust
+use core::convert::Infallible;
+use priv_sep::{UserInfo, PrivDropErr};
+use std::{
+    io::Error,
+    net::{Ipv6Addr, SocketAddrV6},
+};
+use tokio::net::TcpListener;
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<Infallible, PrivDropErr<Error>> {
+    // Get the user ID and group ID for nobody from `passwd(5)`.
+    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
+    // Bind to TCP `[::1]:443` as root.
+    // `setresgid(2)` to the group ID associated with nobody.
+    // `setresuid(2)` to the user ID associated with nobody.
+    let listener = UserInfo::chroot_then_priv_drop_async("nobody", "/path/chroot/", false, async || {
+        TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
+    }).await?;
+    // At this point, the process is running under nobody.
+    loop {
+        // Handle TCP connections.
+        if let Ok((_, ip)) = listener.accept().await {
+            assert!(ip.is_ipv6());
+        }
+    }
+}
+```
 
 ## Minimum Supported Rust Version (MSRV)
 
@@ -51,14 +113,13 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
 as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-Before any PR is sent, `cargo clippy` and `cargo t` should be run for both `--no-default-features` and
-`--all-features`. Additionally `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to
-ensure documentation can be built.
+Before any PR is sent, `cargo clippy` and `cargo t` should be run. Additionally
+`RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to ensure documentation can be built.
 
 ### Status
 
-This package will be actively maintained to stay in-sync with the latest version of OpenBSD; as a result,
-the crate is only tested on the `x86_64-unknown-openbsd` target. While OpenBSD supports both the most recent
--release/-stable release as well as the previous version, only the most recent version will be supported by this
-library. If using -stable, it may be necessary to build the
+This package will be actively maintained to stay in-sync with the latest version of OpenBSD.
+The crate is only tested on the `x86_64-unknown-openbsd` and `x86_64-unknown-linux` targets. While OpenBSD supports
+both the most recent -release/-stable release as well as the previous version, only the most recent version will
+be supported by this library. If using -stable, it may be necessary to build the
 [`rust` port](https://github.com/openbsd/ports/tree/master/lang/rust) from -current.
