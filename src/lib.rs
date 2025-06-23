@@ -938,6 +938,7 @@ mod tests {
     use super::{Permissions, Promise, Promises};
     use core::net::{Ipv6Addr, SocketAddrV6};
     use std::{fs, io::Error, net::TcpListener};
+    use tokio as _;
     const README: &str = "README.md";
     #[test]
     fn test_getuid() {

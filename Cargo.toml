@@ -10,21 +10,48 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.1"
+version = "3.0.0-alpha.1.1"
 
 [lints.rust]
-unknown_lints = { level = "deny", priority = -1 }
+ambiguous_negative_literals = { level = "deny", priority = -1 }
+closure_returning_async_block = { level = "deny", priority = -1 }
+deref_into_dyn_supertrait = { level = "deny", priority = -1 }
+ffi_unwind_calls = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
+impl_trait_redundant_captures = { level = "deny", priority = -1 }
+keyword-idents = { level = "deny", priority = -1 }
 let_underscore = { level = "deny", priority = -1 }
+linker_messages = { level = "deny", priority = -1 }
+macro_use_extern_crate = { level = "deny", priority = -1 }
+meta_variable_misuse = { level = "deny", priority = -1 }
+missing_copy_implementations = { level = "deny", priority = -1 }
+missing_debug_implementations = { level = "deny", priority = -1 }
 missing_docs = { level = "deny", priority = -1 }
+non_ascii_idents = { level = "deny", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }
+redundant_imports = { level = "deny", priority = -1 }
+redundant_lifetimes = { level = "deny", priority = -1 }
 refining_impl_trait = { level = "deny", priority = -1 }
 rust_2018_compatibility = { level = "deny", priority = -1 }
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2021_compatibility = { level = "deny", priority = -1 }
 rust_2024_compatibility = { level = "deny", priority = -1 }
+single_use_lifetimes = { level = "deny", priority = -1 }
+trivial_casts = { level = "deny", priority = -1 }
+trivial_numeric_casts = { level = "deny", priority = -1 }
+unit_bindings = { level = "deny", priority = -1 }
+unknown_lints = { level = "deny", priority = -1 }
+unnameable_types = { level = "deny", priority = -1 }
+unreachable_pub = { level = "deny", priority = -1 }
 unsafe_code = { level = "deny", priority = -1 }
+unstable_features = { level = "deny", priority = -1 }
 unused = { level = "deny", priority = -1 }
+unused_crate_dependencies = { level = "deny", priority = -1 }
+unused_import_braces = { level = "deny", priority = -1 }
+unused_lifetimes = { level = "deny", priority = -1 }
+unused_qualifications = { level = "deny", priority = -1 }
+unused_results = { level = "deny", priority = -1 }
+variant_size_differences = { level = "deny", priority = -1 }
 warnings = { level = "deny", priority = -1 }
 
 [lints.clippy]
@@ -46,15 +73,15 @@ exhaustive_structs = "allow"
 implicit_return = "allow"
 min_ident_chars = "allow"
 missing_trait_methods = "allow"
+pub_with_shorthand = "allow"
+redundant_pub_crate = "allow"
 ref_patterns = "allow"
 return_and_then = "allow"
-single_call_fn = "allow"
 single_char_lifetime_names = "allow"
-unseparated_literal_suffix = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-tokio = { version = "1.44.2", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.45.1", default-features = false, features = ["macros", "net", "rt"] }
