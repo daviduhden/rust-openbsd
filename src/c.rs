@@ -111,9 +111,37 @@ unsafe extern "C" {
     /// [`getegid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/getegid.html).
     pub(crate) safe fn getegid() -> IdT;
     /// [`setresuid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setresuid.html).
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "openbsd"
+    ))]
     pub(crate) safe fn setresuid(ruid: IdT, euid: IdT, suid: IdT) -> c_int;
+    /// [`setuid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setuid.html#).
+    #[cfg(not(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "openbsd"
+    )))]
+    pub(crate) safe fn setuid(uid: IdT) -> c_int;
     /// [`setresgid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setresgid.html).
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "openbsd"
+    ))]
     pub(crate) safe fn setresgid(rgid: IdT, egid: IdT, sgid: IdT) -> c_int;
+    /// [`setgid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setgid.html#).
+    #[cfg(not(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "openbsd"
+    )))]
+    pub(crate) safe fn setgid(gid: IdT) -> c_int;
     /// [`chroot(2)`](https://manned.org/chroot.2).
     pub(crate) fn chroot(path: *const c_char) -> c_int;
     /// [`chdir`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/chdir.html).

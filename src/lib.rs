@@ -158,6 +158,8 @@ impl Uid {
     /// Calls [`setresuid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setresuid.html)
     /// passing `self` for the real, effective, and saved user IDs.
     ///
+    /// Note on some platforms `setuid` is called using `self`.
+    ///
     /// # Errors
     ///
     /// Errors iff `setresuid` does.
@@ -170,7 +172,21 @@ impl Uid {
     /// ```
     #[inline]
     pub fn setresuid(self) -> Result<(), Error> {
-        if c::setresuid(self.0, self.0, self.0) == SUCCESS {
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux",
+            target_os = "openbsd"
+        ))]
+        let code = c::setresuid(self.0, self.0, self.0);
+        #[cfg(not(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux",
+            target_os = "openbsd"
+        )))]
+        let code = c::setuid(self.0);
+        if code == SUCCESS {
             Ok(())
         } else {
             Err(Error::last_os_error())
@@ -240,6 +256,8 @@ impl Gid {
     /// Calls [`setresgid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setresgid.html)
     /// passing `self` for the real, effective, and saved group IDs.
     ///
+    /// Note on some platforms `setgid` is called using `self`.
+    ///
     /// # Errors
     ///
     /// Errors iff `setresgid` does.
@@ -252,7 +270,21 @@ impl Gid {
     /// ```
     #[inline]
     pub fn setresgid(self) -> Result<(), Error> {
-        if c::setresgid(self.0, self.0, self.0) == SUCCESS {
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux",
+            target_os = "openbsd"
+        ))]
+        let code = c::setresgid(self.0, self.0, self.0);
+        #[cfg(not(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux",
+            target_os = "openbsd"
+        )))]
+        let code = c::setgid(self.0);
+        if code == SUCCESS {
             Ok(())
         } else {
             Err(Error::last_os_error())
