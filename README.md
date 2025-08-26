@@ -118,8 +118,5 @@ Before any PR is sent, `cargo clippy` and `cargo t` should be run. Additionally
 
 ### Status
 
-This package will be actively maintained to stay in-sync with the latest version of OpenBSD.
-The crate is only tested on the `x86_64-unknown-openbsd` and `x86_64-unknown-linux` targets. While OpenBSD supports
-both the most recent -release/-stable release as well as the previous version, only the most recent version will
-be supported by this library. If using -stable, it may be necessary to build the
-[`rust` port](https://github.com/openbsd/ports/tree/master/lang/rust) from -current.
+The crate is only tested on the `x86_64-unknown-linux-gnu`, `x86_64-unknown-openbsd`, and `aarch64-apple-darwin`
+targets; but it should work on most platforms.

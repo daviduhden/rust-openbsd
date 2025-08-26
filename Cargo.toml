@@ -10,7 +10,7 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.1.2"
+version = "3.0.0-alpha.1.3"
 
 [lints.rust]
 ambiguous_negative_literals = { level = "deny", priority = -1 }
@@ -23,7 +23,7 @@ future_incompatible = { level = "deny", priority = -1 }
 impl_trait_redundant_captures = { level = "deny", priority = -1 }
 keyword_idents = { level = "deny", priority = -1 }
 let_underscore = { level = "deny", priority = -1 }
-linker_messages = { level = "deny", priority = -1 }
+#linker_messages = { level = "deny", priority = -1 }
 #lossy_provenance_casts = { level = "deny", priority = -1 }
 macro_use_extern_crate = { level = "deny", priority = -1 }
 meta_variable_misuse = { level = "deny", priority = -1 }
@@ -91,4 +91,4 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-tokio = { version = "1.45.1", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.47.1", default-features = false, features = ["macros", "net", "rt"] }

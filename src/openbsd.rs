@@ -1,16 +1,10 @@
 #[cfg(doc)]
 use super::chroot_then_chdir;
 use super::{NulOrIoErr, PrivDropErr, SUCCESS, UserInfo};
-use Promise::{
-    Audio, Bpf, Chown, Cpath, Disklabel, Dns, Dpath, Drm, Exec, Fattr, Flock, Getpw, Id, Inet,
-    Mcast, Pf, Proc, ProtExec, Ps, Recvfd, Route, Rpath, Sendfd, Settime, Stdio, Tape, Tmppath,
-    Tty, Unix, Unveil, Video, Vminfo, Vmm, Wpath, Wroute,
-};
 use alloc::ffi::CString;
 #[cfg(doc)]
 use alloc::ffi::NulError;
 use core::{
-    convert::AsRef,
     ffi::{c_char, c_int},
     fmt::{self, Display, Formatter},
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
@@ -20,9 +14,9 @@ use std::{io::Error, os::unix::ffi::OsStrExt as _, path::Path};
 #[expect(unsafe_code, reason = "FFI requires unsafe")]
 unsafe extern "C" {
     /// [`pledge(2)`](https://man.openbsd.org/pledge.2).
-    pub fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
+    pub(crate) fn pledge(promises: *const c_char, execpromises: *const c_char) -> c_int;
     /// [`unveil(2)`](https://man.openbsd.org/unveil.2).
-    pub fn unveil(path: *const c_char, permissions: *const c_char) -> c_int;
+    pub(crate) fn unveil(path: *const c_char, permissions: *const c_char) -> c_int;
 }
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/pledge.2).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -105,42 +99,42 @@ impl Promise {
     /// Returns `self` as a `u64`.
     const fn to_u64(self) -> u64 {
         match self {
-            Audio => 0x1,
-            Bpf => 0x2,
-            Chown => 0x4,
-            Cpath => 0x8,
-            Disklabel => 0x10,
-            Dns => 0x20,
-            Dpath => 0x40,
-            Drm => 0x80,
+            Self::Audio => 0x1,
+            Self::Bpf => 0x2,
+            Self::Chown => 0x4,
+            Self::Cpath => 0x8,
+            Self::Disklabel => 0x10,
+            Self::Dns => 0x20,
+            Self::Dpath => 0x40,
+            Self::Drm => 0x80,
             Self::Error => 0x100,
-            Exec => 0x200,
-            Fattr => 0x400,
-            Flock => 0x800,
-            Getpw => 0x1000,
-            Id => 0x2000,
-            Inet => 0x4000,
-            Mcast => 0x8000,
-            Pf => 0x10000,
-            Proc => 0x20000,
-            ProtExec => 0x40000,
-            Ps => 0x80000,
-            Recvfd => 0x0010_0000,
-            Route => 0x0020_0000,
-            Rpath => 0x0040_0000,
-            Sendfd => 0x0080_0000,
-            Settime => 0x0100_0000,
-            Stdio => 0x0200_0000,
-            Tape => 0x0400_0000,
-            Tmppath => 0x0800_0000,
-            Tty => 0x1000_0000,
-            Unix => 0x2000_0000,
-            Unveil => 0x4000_0000,
-            Video => 0x8000_0000,
-            Vminfo => 0x0001_0000_0000,
-            Vmm => 0x0002_0000_0000,
-            Wpath => 0x0004_0000_0000,
-            Wroute => 0x0008_0000_0000,
+            Self::Exec => 0x200,
+            Self::Fattr => 0x400,
+            Self::Flock => 0x800,
+            Self::Getpw => 0x1000,
+            Self::Id => 0x2000,
+            Self::Inet => 0x4000,
+            Self::Mcast => 0x8000,
+            Self::Pf => 0x10000,
+            Self::Proc => 0x20000,
+            Self::ProtExec => 0x40000,
+            Self::Ps => 0x80000,
+            Self::Recvfd => 0x0010_0000,
+            Self::Route => 0x0020_0000,
+            Self::Rpath => 0x0040_0000,
+            Self::Sendfd => 0x0080_0000,
+            Self::Settime => 0x0100_0000,
+            Self::Stdio => 0x0200_0000,
+            Self::Tape => 0x0400_0000,
+            Self::Tmppath => 0x0800_0000,
+            Self::Tty => 0x1000_0000,
+            Self::Unix => 0x2000_0000,
+            Self::Unveil => 0x4000_0000,
+            Self::Video => 0x8000_0000,
+            Self::Vminfo => 0x0001_0000_0000,
+            Self::Vmm => 0x0002_0000_0000,
+            Self::Wpath => 0x0004_0000_0000,
+            Self::Wroute => 0x0008_0000_0000,
         }
     }
 }
@@ -148,42 +142,42 @@ impl Display for Promise {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Audio => f.write_str("pledge(2) 'audio' promise"),
-            Bpf => f.write_str("pledge(2) 'bpf' promise"),
-            Chown => f.write_str("pledge(2) 'chown' promise"),
-            Cpath => f.write_str("pledge(2) 'cpath' promise"),
-            Disklabel => f.write_str("pledge(2) 'disklabel' promise"),
-            Dns => f.write_str("pledge(2) 'dns' promise"),
-            Dpath => f.write_str("pledge(2) 'dpath' promise"),
-            Drm => f.write_str("pledge(2) 'drm' promise"),
+            Self::Audio => f.write_str("pledge(2) 'audio' promise"),
+            Self::Bpf => f.write_str("pledge(2) 'bpf' promise"),
+            Self::Chown => f.write_str("pledge(2) 'chown' promise"),
+            Self::Cpath => f.write_str("pledge(2) 'cpath' promise"),
+            Self::Disklabel => f.write_str("pledge(2) 'disklabel' promise"),
+            Self::Dns => f.write_str("pledge(2) 'dns' promise"),
+            Self::Dpath => f.write_str("pledge(2) 'dpath' promise"),
+            Self::Drm => f.write_str("pledge(2) 'drm' promise"),
             Self::Error => f.write_str("pledge(2) 'error' promise"),
-            Exec => f.write_str("pledge(2) 'exec' promise"),
-            Fattr => f.write_str("pledge(2) 'fattr' promise"),
-            Flock => f.write_str("pledge(2) 'flock' promise"),
-            Getpw => f.write_str("pledge(2) 'getpw' promise"),
-            Id => f.write_str("pledge(2) 'id' promise"),
-            Inet => f.write_str("pledge(2) 'inet' promise"),
-            Mcast => f.write_str("pledge(2) 'mcast' promise"),
-            Pf => f.write_str("pledge(2) 'pf' promise"),
-            Proc => f.write_str("pledge(2) 'proc' promise"),
-            ProtExec => f.write_str("pledge(2) 'prot_exec' promise"),
-            Ps => f.write_str("pledge(2) 'ps' promise"),
-            Recvfd => f.write_str("pledge(2) 'recvfd' promise"),
-            Route => f.write_str("pledge(2) 'route' promise"),
-            Rpath => f.write_str("pledge(2) 'rpath' promise"),
-            Sendfd => f.write_str("pledge(2) 'sendfd' promise"),
-            Settime => f.write_str("pledge(2) 'settime' promise"),
-            Stdio => f.write_str("pledge(2) 'stdio' promise"),
-            Tape => f.write_str("pledge(2) 'tape' promise"),
-            Tmppath => f.write_str("pledge(2) 'tmppath' promise"),
-            Tty => f.write_str("pledge(2) 'tty' promise"),
-            Unix => f.write_str("pledge(2) 'unix' promise"),
-            Unveil => f.write_str("pledge(2) 'unveil' promise"),
-            Video => f.write_str("pledge(2) 'video' promise"),
-            Vminfo => f.write_str("pledge(2) 'vminfo' promise"),
-            Vmm => f.write_str("pledge(2) 'vmm' promise"),
-            Wpath => f.write_str("pledge(2) 'wpath' promise"),
-            Wroute => f.write_str("pledge(2) 'wroute' promise"),
+            Self::Exec => f.write_str("pledge(2) 'exec' promise"),
+            Self::Fattr => f.write_str("pledge(2) 'fattr' promise"),
+            Self::Flock => f.write_str("pledge(2) 'flock' promise"),
+            Self::Getpw => f.write_str("pledge(2) 'getpw' promise"),
+            Self::Id => f.write_str("pledge(2) 'id' promise"),
+            Self::Inet => f.write_str("pledge(2) 'inet' promise"),
+            Self::Mcast => f.write_str("pledge(2) 'mcast' promise"),
+            Self::Pf => f.write_str("pledge(2) 'pf' promise"),
+            Self::Proc => f.write_str("pledge(2) 'proc' promise"),
+            Self::ProtExec => f.write_str("pledge(2) 'prot_exec' promise"),
+            Self::Ps => f.write_str("pledge(2) 'ps' promise"),
+            Self::Recvfd => f.write_str("pledge(2) 'recvfd' promise"),
+            Self::Route => f.write_str("pledge(2) 'route' promise"),
+            Self::Rpath => f.write_str("pledge(2) 'rpath' promise"),
+            Self::Sendfd => f.write_str("pledge(2) 'sendfd' promise"),
+            Self::Settime => f.write_str("pledge(2) 'settime' promise"),
+            Self::Stdio => f.write_str("pledge(2) 'stdio' promise"),
+            Self::Tape => f.write_str("pledge(2) 'tape' promise"),
+            Self::Tmppath => f.write_str("pledge(2) 'tmppath' promise"),
+            Self::Tty => f.write_str("pledge(2) 'tty' promise"),
+            Self::Unix => f.write_str("pledge(2) 'unix' promise"),
+            Self::Unveil => f.write_str("pledge(2) 'unveil' promise"),
+            Self::Video => f.write_str("pledge(2) 'video' promise"),
+            Self::Vminfo => f.write_str("pledge(2) 'vminfo' promise"),
+            Self::Vmm => f.write_str("pledge(2) 'vmm' promise"),
+            Self::Wpath => f.write_str("pledge(2) 'wpath' promise"),
+            Self::Wroute => f.write_str("pledge(2) 'wroute' promise"),
         }
     }
 }
@@ -204,6 +198,10 @@ impl PartialEq<Promise> for &Promise {
 /// Once a set of `promises` has been [`pledge(2)`](https://man.openbsd.org/pledge.2)d,
 /// only a subset of those `promises` can be `pledge(2)`d again; as a result, this type can be used
 /// to ensure that `Promise`s are never added but only removed from an initial set.
+#[expect(
+    missing_copy_implementations,
+    reason = "a single instance should be created"
+)]
 #[derive(Debug, Eq, PartialEq)]
 pub struct Promises(u64);
 impl Promises {
@@ -792,112 +790,112 @@ impl Promises {
     #[inline]
     pub fn pledge(&self) -> Result<(), Error> {
         let mut p = Vec::new();
-        if self.contains(Audio) {
+        if self.contains(Promise::Audio) {
             p.extend_from_slice(b"audio ");
         }
-        if self.contains(Bpf) {
+        if self.contains(Promise::Bpf) {
             p.extend_from_slice(b"bpf ");
         }
-        if self.contains(Chown) {
+        if self.contains(Promise::Chown) {
             p.extend_from_slice(b"chown ");
         }
-        if self.contains(Cpath) {
+        if self.contains(Promise::Cpath) {
             p.extend_from_slice(b"cpath ");
         }
-        if self.contains(Disklabel) {
+        if self.contains(Promise::Disklabel) {
             p.extend_from_slice(b"disklabel ");
         }
-        if self.contains(Dns) {
+        if self.contains(Promise::Dns) {
             p.extend_from_slice(b"dns ");
         }
-        if self.contains(Dpath) {
+        if self.contains(Promise::Dpath) {
             p.extend_from_slice(b"dpath ");
         }
-        if self.contains(Drm) {
+        if self.contains(Promise::Drm) {
             p.extend_from_slice(b"drm ");
         }
         if self.contains(Promise::Error) {
             p.extend_from_slice(b"error ");
         }
-        if self.contains(Exec) {
+        if self.contains(Promise::Exec) {
             p.extend_from_slice(b"exec ");
         }
-        if self.contains(Fattr) {
+        if self.contains(Promise::Fattr) {
             p.extend_from_slice(b"fattr ");
         }
-        if self.contains(Flock) {
+        if self.contains(Promise::Flock) {
             p.extend_from_slice(b"flock ");
         }
-        if self.contains(Getpw) {
+        if self.contains(Promise::Getpw) {
             p.extend_from_slice(b"getpw ");
         }
-        if self.contains(Id) {
+        if self.contains(Promise::Id) {
             p.extend_from_slice(b"id ");
         }
-        if self.contains(Inet) {
+        if self.contains(Promise::Inet) {
             p.extend_from_slice(b"inet ");
         }
-        if self.contains(Mcast) {
+        if self.contains(Promise::Mcast) {
             p.extend_from_slice(b"mcast ");
         }
-        if self.contains(Pf) {
+        if self.contains(Promise::Pf) {
             p.extend_from_slice(b"pf ");
         }
-        if self.contains(Proc) {
+        if self.contains(Promise::Proc) {
             p.extend_from_slice(b"proc ");
         }
-        if self.contains(ProtExec) {
+        if self.contains(Promise::ProtExec) {
             p.extend_from_slice(b"prot_exec ");
         }
-        if self.contains(Ps) {
+        if self.contains(Promise::Ps) {
             p.extend_from_slice(b"ps ");
         }
-        if self.contains(Recvfd) {
+        if self.contains(Promise::Recvfd) {
             p.extend_from_slice(b"recvfd ");
         }
-        if self.contains(Route) {
+        if self.contains(Promise::Route) {
             p.extend_from_slice(b"route ");
         }
-        if self.contains(Rpath) {
+        if self.contains(Promise::Rpath) {
             p.extend_from_slice(b"rpath ");
         }
-        if self.contains(Sendfd) {
+        if self.contains(Promise::Sendfd) {
             p.extend_from_slice(b"sendfd ");
         }
-        if self.contains(Settime) {
+        if self.contains(Promise::Settime) {
             p.extend_from_slice(b"settime ");
         }
-        if self.contains(Stdio) {
+        if self.contains(Promise::Stdio) {
             p.extend_from_slice(b"stdio ");
         }
-        if self.contains(Tape) {
+        if self.contains(Promise::Tape) {
             p.extend_from_slice(b"tape ");
         }
-        if self.contains(Tmppath) {
+        if self.contains(Promise::Tmppath) {
             p.extend_from_slice(b"tmppath ");
         }
-        if self.contains(Tty) {
+        if self.contains(Promise::Tty) {
             p.extend_from_slice(b"tty ");
         }
-        if self.contains(Unix) {
+        if self.contains(Promise::Unix) {
             p.extend_from_slice(b"unix ");
         }
-        if self.contains(Unveil) {
+        if self.contains(Promise::Unveil) {
             p.extend_from_slice(b"unveil ");
         }
-        if self.contains(Video) {
+        if self.contains(Promise::Video) {
             p.extend_from_slice(b"video ");
         }
-        if self.contains(Vminfo) {
+        if self.contains(Promise::Vminfo) {
             p.extend_from_slice(b"vminfo ");
         }
-        if self.contains(Vmm) {
+        if self.contains(Promise::Vmm) {
             p.extend_from_slice(b"vmm ");
         }
-        if self.contains(Wpath) {
+        if self.contains(Promise::Wpath) {
             p.extend_from_slice(b"wpath ");
         }
-        if self.contains(Wroute) {
+        if self.contains(Promise::Wroute) {
             p.extend_from_slice(b"wroute ");
         }
         let idx = p.len();
