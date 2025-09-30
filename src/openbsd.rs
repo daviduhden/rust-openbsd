@@ -1,16 +1,12 @@
 #[cfg(doc)]
 use super::chroot_then_chdir;
-use super::{NulOrIoErr, PrivDropErr, SUCCESS, UserInfo};
-use alloc::ffi::CString;
-#[cfg(doc)]
-use alloc::ffi::NulError;
+use super::{Errno, PrivDropErr, SUCCESS, UserInfo};
 use core::{
-    ffi::{c_char, c_int},
+    ffi::{CStr, c_char, c_int},
     fmt::{self, Display, Formatter},
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
     ptr,
 };
-use std::{io::Error, os::unix::ffi::OsStrExt as _, path::Path};
 #[expect(unsafe_code, reason = "FFI requires unsafe")]
 unsafe extern "C" {
     /// [`pledge(2)`](https://man.openbsd.org/pledge.2).
@@ -287,20 +283,14 @@ impl Promises {
     /// # use priv_sep::PrivDropErr;
     /// # use std::{io::Error, net::TcpListener};
     /// # #[cfg(target_os = "openbsd")]
-    /// let (listener, promises) = Promises::new_priv_drop("nobody", [Promise::Inet], false, || {
+    /// let (listener, promises) = Promises::new_priv_drop(c"nobody", [Promise::Inet], false, || {
     ///     TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0))
     /// })?;
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn new_priv_drop<
-        U: Into<Vec<u8>>,
-        Prom: AsRef<[Promise]>,
-        T,
-        E,
-        F: FnOnce() -> Result<T, E>,
-    >(
-        name: U,
+    pub fn new_priv_drop<Prom: AsRef<[Promise]>, T, E, F: FnOnce() -> Result<T, E>>(
+        name: &CStr,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -310,22 +300,22 @@ impl Promises {
             |val, promise| val.add(*promise),
         );
         UserInfo::new(name)
-            .map_err(PrivDropErr::from)
+            .map_err(PrivDropErr::Libc)
             .and_then(|opt| {
                 opt.ok_or_else(|| PrivDropErr::NoPasswdEntry)
                     .and_then(|info| {
                         if info.is_root() {
                             Err(PrivDropErr::RootEntry)
                         } else {
-                            promises.pledge().map_err(PrivDropErr::Io).and_then(|()| {
+                            promises.pledge().map_err(PrivDropErr::Libc).and_then(|()| {
                                 f().map_err(PrivDropErr::Other).and_then(|res| {
-                                    info.setresid().map_err(PrivDropErr::Io).and_then(|()| {
+                                    info.setresid().map_err(PrivDropErr::Libc).and_then(|()| {
                                         if retain_id_promise {
                                             Ok(())
                                         } else {
                                             promises
                                                 .remove_then_pledge(Promise::Id)
-                                                .map_err(PrivDropErr::Io)
+                                                .map_err(PrivDropErr::Libc)
                                         }
                                         .map(|()| (res, promises))
                                     })
@@ -349,19 +339,18 @@ impl Promises {
     /// # use core::net::{Ipv6Addr, SocketAddrV6};
     /// # use tokio::net::TcpListener;
     /// # #[cfg(target_os = "openbsd")]
-    /// let listener_fut = Promises::new_priv_drop_async("nobody", [Promise::Inet], false, async || {
+    /// let listener_fut = Promises::new_priv_drop_async(c"nobody", [Promise::Inet], false, async || {
     ///     TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
     /// });
     /// ```
     #[inline]
     pub async fn new_priv_drop_async<
-        U: Into<Vec<u8>>,
         Prom: AsRef<[Promise]>,
         T,
         E,
         F: AsyncFnOnce() -> Result<T, E>,
     >(
-        name: U,
+        name: &CStr,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -379,23 +368,23 @@ impl Promises {
                     } else {
                         match promises.pledge() {
                             Ok(()) => f().await.map_err(PrivDropErr::Other).and_then(|res| {
-                                info.setresid().map_err(PrivDropErr::Io).and_then(|()| {
+                                info.setresid().map_err(PrivDropErr::Libc).and_then(|()| {
                                     if retain_id_promise {
                                         Ok(())
                                     } else {
                                         promises
                                             .remove_then_pledge(Promise::Id)
-                                            .map_err(PrivDropErr::Io)
+                                            .map_err(PrivDropErr::Libc)
                                     }
                                     .map(|()| (res, promises))
                                 })
                             }),
-                            Err(err) => Err(PrivDropErr::Io(err)),
+                            Err(err) => Err(PrivDropErr::Libc(err)),
                         }
                     }
                 }
             },
-            Err(err) => Err(PrivDropErr::from(err)),
+            Err(err) => Err(PrivDropErr::Libc(err)),
         }
     }
     /// Same as [`Self::new_priv_drop`] except [`chroot_then_chdir`] is called before [`Self::pledge`]ing `initial`.
@@ -413,22 +402,15 @@ impl Promises {
     /// # use priv_sep::PrivDropErr;
     /// # use std::{io::Error, net::TcpListener};
     /// # #[cfg(target_os = "openbsd")]
-    /// let (listener, promises) = Promises::new_chroot_then_priv_drop("nobody", "./", [Promise::Inet], false, || {
+    /// let (listener, promises) = Promises::new_chroot_then_priv_drop(c"nobody", c"./", [Promise::Inet], false, || {
     ///     TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0))
     /// })?;
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn new_chroot_then_priv_drop<
-        U: Into<Vec<u8>>,
-        P: AsRef<Path>,
-        Prom: AsRef<[Promise]>,
-        T,
-        E,
-        F: FnOnce() -> Result<T, E>,
-    >(
-        name: U,
-        path: P,
+    pub fn new_chroot_then_priv_drop<Prom: AsRef<[Promise]>, T, E, F: FnOnce() -> Result<T, E>>(
+        name: &CStr,
+        path: &CStr,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -438,7 +420,7 @@ impl Promises {
             |val, promise| val.add(*promise),
         );
         UserInfo::new(name)
-            .map_err(PrivDropErr::from)
+            .map_err(PrivDropErr::Libc)
             .and_then(|opt| {
                 opt.ok_or_else(|| PrivDropErr::NoPasswdEntry)
                     .and_then(|info| {
@@ -446,18 +428,18 @@ impl Promises {
                             Err(PrivDropErr::RootEntry)
                         } else {
                             super::chroot_then_chdir(path)
-                                .map_err(PrivDropErr::from)
+                                .map_err(PrivDropErr::Libc)
                                 .and_then(|()| {
-                                    promises.pledge().map_err(PrivDropErr::Io).and_then(|()| {
+                                    promises.pledge().map_err(PrivDropErr::Libc).and_then(|()| {
                                         f().map_err(PrivDropErr::Other).and_then(|res| {
-                                            info.setresid().map_err(PrivDropErr::Io).and_then(
+                                            info.setresid().map_err(PrivDropErr::Libc).and_then(
                                                 |()| {
                                                     if retain_id_promise {
                                                         Ok(())
                                                     } else {
                                                         promises
                                                             .remove_then_pledge(Promise::Id)
-                                                            .map_err(PrivDropErr::Io)
+                                                            .map_err(PrivDropErr::Libc)
                                                     }
                                                     .map(|()| (res, promises))
                                                 },
@@ -483,21 +465,19 @@ impl Promises {
     /// # use core::net::{Ipv6Addr, SocketAddrV6};
     /// # use tokio::net::TcpListener;
     /// # #[cfg(target_os = "openbsd")]
-    /// let listener_fut = Promises::new_chroot_then_priv_drop_async("nobody", "./", [Promise::Inet], false, async || {
+    /// let listener_fut = Promises::new_chroot_then_priv_drop_async(c"nobody", c"./", [Promise::Inet], false, async || {
     ///     TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
     /// });
     /// ```
     #[inline]
     pub async fn new_chroot_then_priv_drop_async<
-        U: Into<Vec<u8>>,
-        P: AsRef<Path>,
         Prom: AsRef<[Promise]>,
         T,
         E,
         F: AsyncFnOnce() -> Result<T, E>,
     >(
-        name: U,
-        path: P,
+        name: &CStr,
+        path: &CStr,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -516,25 +496,25 @@ impl Promises {
                         match super::chroot_then_chdir(path) {
                             Ok(()) => match promises.pledge() {
                                 Ok(()) => f().await.map_err(PrivDropErr::Other).and_then(|res| {
-                                    info.setresid().map_err(PrivDropErr::Io).and_then(|()| {
+                                    info.setresid().map_err(PrivDropErr::Libc).and_then(|()| {
                                         if retain_id_promise {
                                             Ok(())
                                         } else {
                                             promises
                                                 .remove_then_pledge(Promise::Id)
-                                                .map_err(PrivDropErr::Io)
+                                                .map_err(PrivDropErr::Libc)
                                         }
                                         .map(|()| (res, promises))
                                     })
                                 }),
-                                Err(err) => Err(PrivDropErr::Io(err)),
+                                Err(err) => Err(PrivDropErr::Libc(err)),
                             },
-                            Err(err) => Err(PrivDropErr::from(err)),
+                            Err(err) => Err(PrivDropErr::Libc(err)),
                         }
                     }
                 }
             },
-            Err(err) => Err(PrivDropErr::from(err)),
+            Err(err) => Err(PrivDropErr::Libc(err)),
         }
     }
     /// Returns the number of [`Promise`]s.
@@ -621,7 +601,7 @@ impl Promises {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] iff `pledge` does.
+    /// Errors iff `pledge(2)` does.
     ///
     /// # Examples
     ///
@@ -632,7 +612,7 @@ impl Promises {
     /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).retain_then_pledge([Promise::Rpath]).is_ok());
     /// ```
     #[inline]
-    pub fn retain_then_pledge<P: AsRef<[Promise]>>(&mut self, promises: P) -> Result<(), Error> {
+    pub fn retain_then_pledge<P: AsRef<[Promise]>>(&mut self, promises: P) -> Result<(), Errno> {
         // We opt for the easy way by copying `self`. This should be the fastest for the
         // typical case since `self` likely has very few `Promise`s, and it makes for less code.
         let cur = Self(self.0);
@@ -672,7 +652,7 @@ impl Promises {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] iff `pledge` does.
+    /// Errors iff `pledge(2)` does.
     ///
     /// # Examples
     ///
@@ -686,7 +666,7 @@ impl Promises {
     pub fn remove_promises_then_pledge<P: AsRef<[Promise]>>(
         &mut self,
         promises: P,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Errno> {
         // We opt for the easy way by copying `self`. This should be the fastest for the
         // typical case since `self` likely has very few `Promise`s, and it makes for less code.
         let cur = Self(self.0);
@@ -721,7 +701,7 @@ impl Promises {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] iff `pledge` does.
+    /// Errors iff `pledge(2)` does.
     ///
     /// # Examples
     ///
@@ -732,7 +712,7 @@ impl Promises {
     /// assert!(Promises::new([Promise::Rpath, Promise::Stdio]).remove_then_pledge(Promise::Rpath).is_ok());
     /// ```
     #[inline]
-    pub fn remove_then_pledge(&mut self, promise: Promise) -> Result<(), Error> {
+    pub fn remove_then_pledge(&mut self, promise: Promise) -> Result<(), Errno> {
         // We opt for the easy way by copying `self`. This should be the fastest for the
         // typical case since `self` likely has very few `Promise`s, and it makes for less code.
         let cur = Self(self.0);
@@ -745,9 +725,9 @@ impl Promises {
     }
     /// Invokes `pledge(2)` always passing `NULL` for `execpromises` and `promises` for `promises`.
     ///
-    /// This function MUST only be called by [`Self::pledge`] and [`Self::pledge_none`].
+    /// This function MUST only be called by [`Self::pledge`], [`Self::pledge_none`] and [`Self::pledge_raw`].
     #[expect(unsafe_code, reason = "pledge(2) takes in pointers")]
-    fn inner_pledge(promises: *const c_char) -> Result<(), Error> {
+    fn inner_pledge(promises: *const c_char) -> Result<(), Errno> {
         // SAFETY:
         // `promises` is either null or valid as can be seen in the only functions that call this
         // function:
@@ -755,7 +735,7 @@ impl Promises {
         if unsafe { pledge(promises, ptr::null()) } == SUCCESS {
             Ok(())
         } else {
-            Err(Error::last_os_error())
+            Err(Errno::last())
         }
     }
     /// Invokes [`pledge(2)`](https://man.openbsd.org/pledge.2) always passing in
@@ -763,7 +743,7 @@ impl Promises {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] iff `pledge(2)` errors.
+    /// Errors iff `pledge(2)` does.
     ///
     /// # Examples
     ///
@@ -773,146 +753,329 @@ impl Promises {
     /// # #[cfg(target_os = "openbsd")]
     /// assert!(Promises::new([Promise::Stdio]).pledge().is_ok());
     /// ```
-    #[expect(
-        unsafe_code,
-        reason = "we manually construct a valid CString and ensure its safety"
-    )]
+    #[expect(unsafe_code, reason = "comment justifies correctness")]
     #[expect(
         clippy::arithmetic_side_effects,
         clippy::indexing_slicing,
-        reason = "we replace a trailing space with 0 to ensure CString is correctly constructed"
+        reason = "comments justify correctness"
     )]
     #[expect(
         clippy::cognitive_complexity,
         clippy::too_many_lines,
-        reason = "many if blocks to handle each Promise"
+        reason = "a lot of Promises to check"
     )]
     #[inline]
-    pub fn pledge(&self) -> Result<(), Error> {
-        let mut p = Vec::new();
+    pub fn pledge(&self) -> Result<(), Errno> {
+        // Most of this code was programmatically generated.
+        /// b"audio ".
+        const AUDIO: &[u8; 6] = b"audio ";
+        /// b"bpf ".
+        const BPF: &[u8; 4] = b"bpf ";
+        /// b"chown ".
+        const CHOWN: &[u8; 6] = b"chown ";
+        /// b"cpath ".
+        const CPATH: &[u8; 6] = b"cpath ";
+        /// b"disklabel ".
+        const DISKLABEL: &[u8; 10] = b"disklabel ";
+        /// b"dns ".
+        const DNS: &[u8; 4] = b"dns ";
+        /// b"dpath ".
+        const DPATH: &[u8; 6] = b"dpath ";
+        /// b"drm ".
+        const DRM: &[u8; 4] = b"drm ";
+        /// b"error ".
+        const ERROR: &[u8; 6] = b"error ";
+        /// b"exec ".
+        const EXEC: &[u8; 5] = b"exec ";
+        /// b"fattr ".
+        const FATTR: &[u8; 6] = b"fattr ";
+        /// b"flock ".
+        const FLOCK: &[u8; 6] = b"flock ";
+        /// b"getpw ".
+        const GETPW: &[u8; 6] = b"getpw ";
+        /// b"id ".
+        const ID: &[u8; 3] = b"id ";
+        /// b"inet ".
+        const INET: &[u8; 5] = b"inet ";
+        /// b"mcast ".
+        const MCAST: &[u8; 6] = b"mcast ";
+        /// b"pf ".
+        const PF: &[u8; 3] = b"pf ";
+        /// b"proc ".
+        const PROC: &[u8; 5] = b"proc ";
+        /// b"prot_exec ".
+        #[expect(clippy::doc_markdown, reason = "false positive")]
+        const PROT_EXEC: &[u8; 10] = b"prot_exec ";
+        /// b"ps ".
+        const PS: &[u8; 3] = b"ps ";
+        /// b"recvfd ".
+        const RECVFD: &[u8; 7] = b"recvfd ";
+        /// b"route ".
+        const ROUTE: &[u8; 6] = b"route ";
+        /// b"rpath ".
+        const RPATH: &[u8; 6] = b"rpath ";
+        /// b"sendfd ".
+        const SENDFD: &[u8; 7] = b"sendfd ";
+        /// b"settime ".
+        const SETTIME: &[u8; 8] = b"settime ";
+        /// b"stdio ".
+        const STDIO: &[u8; 6] = b"stdio ";
+        /// b"tape ".
+        const TAPE: &[u8; 5] = b"tape ";
+        /// b"tmppath ".
+        const TMPPATH: &[u8; 8] = b"tmppath ";
+        /// b"tty ".
+        const TTY: &[u8; 4] = b"tty ";
+        /// b"unix ".
+        const UNIX: &[u8; 5] = b"unix ";
+        /// b"unveil ".
+        const UNVEIL: &[u8; 7] = b"unveil ";
+        /// b"video ".
+        const VIDEO: &[u8; 6] = b"video ";
+        /// b"vminfo ".
+        const VMINFO: &[u8; 7] = b"vminfo ";
+        /// b"vmm ".
+        const VMM: &[u8; 4] = b"vmm ";
+        /// b"wpath ".
+        const WPATH: &[u8; 6] = b"wpath ";
+        /// b"wroute ".
+        const WROUTE: &[u8; 7] = b"wroute ";
+        /// Maximum length needed to pledge all promises.
+        const MAX_LEN: usize = AUDIO.len()
+            + BPF.len()
+            + CHOWN.len()
+            + CPATH.len()
+            + DISKLABEL.len()
+            + DNS.len()
+            + DPATH.len()
+            + DRM.len()
+            + ERROR.len()
+            + EXEC.len()
+            + FATTR.len()
+            + FLOCK.len()
+            + GETPW.len()
+            + ID.len()
+            + INET.len()
+            + MCAST.len()
+            + PF.len()
+            + PROC.len()
+            + PROT_EXEC.len()
+            + PS.len()
+            + RECVFD.len()
+            + ROUTE.len()
+            + RPATH.len()
+            + SENDFD.len()
+            + SETTIME.len()
+            + STDIO.len()
+            + TAPE.len()
+            + TMPPATH.len()
+            + TTY.len()
+            + UNIX.len()
+            + UNVEIL.len()
+            + VIDEO.len()
+            + VMINFO.len()
+            + VMM.len()
+            + WPATH.len()
+            + WROUTE.len();
+        let mut max_buffer = [0; MAX_LEN];
+        let mut idx = 0;
+        let mut len = 0;
+        // Our additions are all free from overflow since a compilation error would have occurred for
+        // `MAX_LEN`.
+        // Our indexing is correct since `len - idx` is always the length of the value we copy from.
         if self.contains(Promise::Audio) {
-            p.extend_from_slice(b"audio ");
+            len = AUDIO.len();
+            max_buffer[..len].copy_from_slice(AUDIO);
+            idx = len;
         }
         if self.contains(Promise::Bpf) {
-            p.extend_from_slice(b"bpf ");
+            len += BPF.len();
+            max_buffer[idx..len].copy_from_slice(BPF);
+            idx = len;
         }
         if self.contains(Promise::Chown) {
-            p.extend_from_slice(b"chown ");
+            len += CHOWN.len();
+            max_buffer[idx..len].copy_from_slice(CHOWN);
+            idx = len;
         }
         if self.contains(Promise::Cpath) {
-            p.extend_from_slice(b"cpath ");
+            len += CPATH.len();
+            max_buffer[idx..len].copy_from_slice(CPATH);
+            idx = len;
         }
         if self.contains(Promise::Disklabel) {
-            p.extend_from_slice(b"disklabel ");
+            len += DISKLABEL.len();
+            max_buffer[idx..len].copy_from_slice(DISKLABEL);
+            idx = len;
         }
         if self.contains(Promise::Dns) {
-            p.extend_from_slice(b"dns ");
+            len += DNS.len();
+            max_buffer[idx..len].copy_from_slice(DNS);
+            idx = len;
         }
         if self.contains(Promise::Dpath) {
-            p.extend_from_slice(b"dpath ");
+            len += DPATH.len();
+            max_buffer[idx..len].copy_from_slice(DPATH);
+            idx = len;
         }
         if self.contains(Promise::Drm) {
-            p.extend_from_slice(b"drm ");
+            len += DRM.len();
+            max_buffer[idx..len].copy_from_slice(DRM);
+            idx = len;
         }
         if self.contains(Promise::Error) {
-            p.extend_from_slice(b"error ");
+            len += ERROR.len();
+            max_buffer[idx..len].copy_from_slice(ERROR);
+            idx = len;
         }
         if self.contains(Promise::Exec) {
-            p.extend_from_slice(b"exec ");
+            len += EXEC.len();
+            max_buffer[idx..len].copy_from_slice(EXEC);
+            idx = len;
         }
         if self.contains(Promise::Fattr) {
-            p.extend_from_slice(b"fattr ");
+            len += FATTR.len();
+            max_buffer[idx..len].copy_from_slice(FATTR);
+            idx = len;
         }
         if self.contains(Promise::Flock) {
-            p.extend_from_slice(b"flock ");
+            len += FLOCK.len();
+            max_buffer[idx..len].copy_from_slice(FLOCK);
+            idx = len;
         }
         if self.contains(Promise::Getpw) {
-            p.extend_from_slice(b"getpw ");
+            len += GETPW.len();
+            max_buffer[idx..len].copy_from_slice(GETPW);
+            idx = len;
         }
         if self.contains(Promise::Id) {
-            p.extend_from_slice(b"id ");
+            len += ID.len();
+            max_buffer[idx..len].copy_from_slice(ID);
+            idx = len;
         }
         if self.contains(Promise::Inet) {
-            p.extend_from_slice(b"inet ");
+            len += INET.len();
+            max_buffer[idx..len].copy_from_slice(INET);
+            idx = len;
         }
         if self.contains(Promise::Mcast) {
-            p.extend_from_slice(b"mcast ");
+            len += MCAST.len();
+            max_buffer[idx..len].copy_from_slice(MCAST);
+            idx = len;
         }
         if self.contains(Promise::Pf) {
-            p.extend_from_slice(b"pf ");
+            len += PF.len();
+            max_buffer[idx..len].copy_from_slice(PF);
+            idx = len;
         }
         if self.contains(Promise::Proc) {
-            p.extend_from_slice(b"proc ");
+            len += PROC.len();
+            max_buffer[idx..len].copy_from_slice(PROC);
+            idx = len;
         }
         if self.contains(Promise::ProtExec) {
-            p.extend_from_slice(b"prot_exec ");
+            len += PROT_EXEC.len();
+            max_buffer[idx..len].copy_from_slice(PROT_EXEC);
+            idx = len;
         }
         if self.contains(Promise::Ps) {
-            p.extend_from_slice(b"ps ");
+            len += PS.len();
+            max_buffer[idx..len].copy_from_slice(PS);
+            idx = len;
         }
         if self.contains(Promise::Recvfd) {
-            p.extend_from_slice(b"recvfd ");
+            len += RECVFD.len();
+            max_buffer[idx..len].copy_from_slice(RECVFD);
+            idx = len;
         }
         if self.contains(Promise::Route) {
-            p.extend_from_slice(b"route ");
+            len += ROUTE.len();
+            max_buffer[idx..len].copy_from_slice(ROUTE);
+            idx = len;
         }
         if self.contains(Promise::Rpath) {
-            p.extend_from_slice(b"rpath ");
+            len += RPATH.len();
+            max_buffer[idx..len].copy_from_slice(RPATH);
+            idx = len;
         }
         if self.contains(Promise::Sendfd) {
-            p.extend_from_slice(b"sendfd ");
+            len += SENDFD.len();
+            max_buffer[idx..len].copy_from_slice(SENDFD);
+            idx = len;
         }
         if self.contains(Promise::Settime) {
-            p.extend_from_slice(b"settime ");
+            len += SETTIME.len();
+            max_buffer[idx..len].copy_from_slice(SETTIME);
+            idx = len;
         }
         if self.contains(Promise::Stdio) {
-            p.extend_from_slice(b"stdio ");
+            len += STDIO.len();
+            max_buffer[idx..len].copy_from_slice(STDIO);
+            idx = len;
         }
         if self.contains(Promise::Tape) {
-            p.extend_from_slice(b"tape ");
+            len += TAPE.len();
+            max_buffer[idx..len].copy_from_slice(TAPE);
+            idx = len;
         }
         if self.contains(Promise::Tmppath) {
-            p.extend_from_slice(b"tmppath ");
+            len += TMPPATH.len();
+            max_buffer[idx..len].copy_from_slice(TMPPATH);
+            idx = len;
         }
         if self.contains(Promise::Tty) {
-            p.extend_from_slice(b"tty ");
+            len += TTY.len();
+            max_buffer[idx..len].copy_from_slice(TTY);
+            idx = len;
         }
         if self.contains(Promise::Unix) {
-            p.extend_from_slice(b"unix ");
+            len += UNIX.len();
+            max_buffer[idx..len].copy_from_slice(UNIX);
+            idx = len;
         }
         if self.contains(Promise::Unveil) {
-            p.extend_from_slice(b"unveil ");
+            len += UNVEIL.len();
+            max_buffer[idx..len].copy_from_slice(UNVEIL);
+            idx = len;
         }
         if self.contains(Promise::Video) {
-            p.extend_from_slice(b"video ");
+            len += VIDEO.len();
+            max_buffer[idx..len].copy_from_slice(VIDEO);
+            idx = len;
         }
         if self.contains(Promise::Vminfo) {
-            p.extend_from_slice(b"vminfo ");
+            len += VMINFO.len();
+            max_buffer[idx..len].copy_from_slice(VMINFO);
+            idx = len;
         }
         if self.contains(Promise::Vmm) {
-            p.extend_from_slice(b"vmm ");
+            len += VMM.len();
+            max_buffer[idx..len].copy_from_slice(VMM);
+            idx = len;
         }
         if self.contains(Promise::Wpath) {
-            p.extend_from_slice(b"wpath ");
+            len += WPATH.len();
+            max_buffer[idx..len].copy_from_slice(WPATH);
+            idx = len;
         }
         if self.contains(Promise::Wroute) {
-            p.extend_from_slice(b"wroute ");
+            len += WROUTE.len();
+            max_buffer[idx..len].copy_from_slice(WROUTE);
         }
-        let idx = p.len();
-        if idx == 0 {
-            p.push(0);
+        if len == 0 {
+            len += 1;
         } else {
             // All promises have a space after them which means
             // we must replace the last promise's space with
             // 0/nul byte.
-            // `idx` is at least 1 based on the above check.
-            p[idx - 1] = 0;
+            // `len` is at least 1 based on the above check.
+            max_buffer[len - 1] = 0;
         }
         // SAFETY:
-        // `p` was populated above with correct ASCII-encoding of the literal
+        // `max_buffer[..len]` was populated above with correct ASCII-encoding of the literal
         // values all of which do not have 0 bytes.
-        // `p` ends with a 0/nul byte.
-        let arg = unsafe { CString::from_vec_with_nul_unchecked(p) };
+        // `max_buffer[..len]` ends with a 0/nul byte.
+        let arg = unsafe { CStr::from_bytes_with_nul_unchecked(&max_buffer[..len]) };
         Self::inner_pledge(arg.as_ptr())
     }
     /// Invokes [`pledge(2)`](https://man.openbsd.org/pledge.2) with `NULL` for both `promises` and
@@ -920,7 +1083,7 @@ impl Promises {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] iff `pledge(2)` errors.
+    /// Errors iff `pledge(2)` does.
     ///
     /// # Examples
     ///
@@ -931,9 +1094,30 @@ impl Promises {
     /// assert!(Promises::pledge_none().is_ok());
     /// ```
     #[inline]
-    pub fn pledge_none() -> Result<(), Error> {
+    pub fn pledge_none() -> Result<(), Errno> {
         // `NULL` is always valid for `promises`.
         Self::inner_pledge(ptr::null())
+    }
+    /// Invokes [`pledge(2)`](https://man.openbsd.org/pledge.2) with [`CStr::as_ptr`] from `promises` for
+    /// `promises` and `NULL` for `execpromises`.
+    ///
+    /// Exposes an API that allows one to `pledge(2)` "directly".
+    ///
+    /// # Errors
+    ///
+    /// Errors iff `pledge(2)` does.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[cfg(target_os = "openbsd")]
+    /// # use priv_sep::Promises;
+    /// # #[cfg(target_os = "openbsd")]
+    /// assert!(Promises::pledge_raw(c"rpath stdio").is_ok());
+    /// ```
+    #[inline]
+    pub fn pledge_raw(promises: &CStr) -> Result<(), Errno> {
+        Self::inner_pledge(promises.as_ptr())
     }
 }
 impl PartialEq<&Self> for Promises {
@@ -1033,7 +1217,7 @@ impl Permissions {
     ///
     /// This function MUST only be called by the functions [`Self::unveil`] and [`Self::unveil_no_more`].
     #[expect(unsafe_code, reason = "unveil(2) takes in pointers")]
-    fn inner_unveil(path: *const c_char, permissions: *const c_char) -> Result<(), Error> {
+    fn inner_unveil(path: *const c_char, permissions: *const c_char) -> Result<(), Errno> {
         // SAFETY:
         // `path` and `permissions` are either null or valid as can be seen in the only functions that call this
         // function:
@@ -1041,7 +1225,7 @@ impl Permissions {
         if unsafe { unveil(path, permissions) } == SUCCESS {
             Ok(())
         } else {
-            Err(Error::last_os_error())
+            Err(Errno::last())
         }
     }
     /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2)
@@ -1049,76 +1233,78 @@ impl Permissions {
     ///
     /// # Errors
     ///
-    /// Returns [`NulError`] iff [`CString::new`] does.
-    /// Returns [`Error`] iff `unveil(2)` errors.
+    /// Errors iff `unveil(2)` does.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// # #[cfg(target_os = "openbsd")]
-    /// # use std::io::ErrorKind;
+    /// # use priv_sep::{Errno, Permissions};
     /// # #[cfg(target_os = "openbsd")]
-    /// # use priv_sep::{Permissions, NulOrIoErr};
+    /// assert!(Permissions::READ.unveil(c"/path/to/read").is_ok());
     /// # #[cfg(target_os = "openbsd")]
-    /// assert!(Permissions::READ.unveil("/path/to/read").is_ok());
-    /// # #[cfg(target_os = "openbsd")]
-    /// assert!(Permissions::READ.unveil("/path/does/not/exist").map_or_else(
-    ///     |err| match err {
-    ///         NulOrIoErr::Io(e) => e.kind() == ErrorKind::NotFound,
-    ///         NulOrIoErr::Nul(_) => false,
-    ///     },
+    /// assert!(Permissions::READ.unveil(c"/path/does/not/exist").map_or_else(
+    ///     |err| err == Errno::ENOENT,
     ///     |()| false
     /// ));
     /// ```
-    #[expect(
-        unsafe_code,
-        reason = "we manually construct a valid CString and ensure its safety"
-    )]
-    #[expect(
-        clippy::arithmetic_side_effects,
-        reason = "we pre-allocate a Vec with the exact capacity which is capped at 5"
-    )]
     #[inline]
-    pub fn unveil<P: AsRef<Path>>(self, path: P) -> Result<(), NulOrIoErr> {
-        CString::new(path.as_ref().as_os_str().as_bytes()).map_or_else(
-            |e| Err(NulOrIoErr::Nul(e)),
-            |path_c| {
-                // The max sum is 5, so overflow is not possible.
-                let mut vec = Vec::with_capacity(
-                    usize::from(self.is_enabled(Permission::Create))
-                        + usize::from(self.is_enabled(Permission::Execute))
-                        + usize::from(self.is_enabled(Permission::Read))
-                        + usize::from(self.is_enabled(Permission::Write))
-                        + 1,
-                );
-                if self.is_enabled(Permission::Create) {
-                    vec.push(b'c');
-                }
-                if self.is_enabled(Permission::Execute) {
-                    vec.push(b'x');
-                }
+    pub fn unveil(self, path: &CStr) -> Result<(), Errno> {
+        let perms = if self.is_enabled(Permission::Create) {
+            if self.is_enabled(Permission::Execute) {
                 if self.is_enabled(Permission::Read) {
-                    vec.push(b'r');
+                    if self.is_enabled(Permission::Write) {
+                        c"crwx"
+                    } else {
+                        c"crx"
+                    }
+                } else if self.is_enabled(Permission::Write) {
+                    c"cwx"
+                } else {
+                    c"cx"
                 }
+            } else if self.is_enabled(Permission::Read) {
                 if self.is_enabled(Permission::Write) {
-                    vec.push(b'w');
+                    c"crw"
+                } else {
+                    c"cr"
                 }
-                vec.push(0);
-                // SAFETY:
-                // `vec` was populated above with correct ASCII-encoding of the literal
-                // values all of which do not have 0 bytes.
-                // `vec` ends with a 0/nul byte.
-                let perm_c = unsafe { CString::from_vec_with_nul_unchecked(vec) };
-                Self::inner_unveil(path_c.as_ptr(), perm_c.as_ptr()).map_err(NulOrIoErr::Io)
-            },
-        )
+            } else if self.is_enabled(Permission::Write) {
+                c"cw"
+            } else {
+                c"c"
+            }
+        } else if self.is_enabled(Permission::Execute) {
+            if self.is_enabled(Permission::Read) {
+                if self.is_enabled(Permission::Write) {
+                    c"rwx"
+                } else {
+                    c"rx"
+                }
+            } else if self.is_enabled(Permission::Write) {
+                c"wx"
+            } else {
+                c"x"
+            }
+        } else if self.is_enabled(Permission::Read) {
+            if self.is_enabled(Permission::Write) {
+                c"rw"
+            } else {
+                c"r"
+            }
+        } else if self.is_enabled(Permission::Write) {
+            c"w"
+        } else {
+            c""
+        };
+        Self::inner_unveil(path.as_ptr(), perms.as_ptr())
     }
     /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2) by passing `NULL` for both `path` and
     /// `permissions`.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when a problem occurs.
+    /// Errors iff `unveil(2)` does.
     ///
     /// # Examples
     ///
@@ -1129,9 +1315,36 @@ impl Permissions {
     /// assert!(Permissions::unveil_no_more().is_ok());
     /// ```
     #[inline]
-    pub fn unveil_no_more() -> Result<(), Error> {
+    pub fn unveil_no_more() -> Result<(), Errno> {
         // `NULL` is valid for both `path` and `permissions`.
         Self::inner_unveil(ptr::null(), ptr::null())
+    }
+    /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2)
+    /// passing [`CStr::as_ptr`] from `path` for `path` and `permissions.as_ptr()` for `permissions`.
+    ///
+    /// Exposes an API that allows one to `unveil(2)` "directly".
+    ///
+    /// # Errors
+    ///
+    /// Errors iff `unveil(2)` does.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[cfg(target_os = "openbsd")]
+    /// # use priv_sep::{Errno, Permissions};
+    /// # #[cfg(target_os = "openbsd")]
+    /// assert!(Permissions::unveil_raw(c"/path/to/read", c"r").is_ok());
+    /// # #[cfg(target_os = "openbsd")]
+    /// assert!(Permissions::unveil_raw(c"/path/does/not/exist", c"r").map_or_else(
+    ///     |err| err == Errno::ENOENT,
+    ///     |()| false
+    /// ));
+    /// ```
+    #[inline]
+    pub fn unveil_raw(path: &CStr, permissions: &CStr) -> Result<(), Errno> {
+        // `NULL` is valid for both `path` and `permissions`.
+        Self::inner_unveil(path.as_ptr(), permissions.as_ptr())
     }
 }
 impl Display for Permissions {
@@ -1219,184 +1432,5 @@ impl PartialEq<Permissions> for &Permissions {
     #[inline]
     fn eq(&self, other: &Permissions) -> bool {
         **self == *other
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::{Permissions, Promise, Promises};
-    use crate::{PrivDropErr, Uid};
-    use core::net::{Ipv6Addr, SocketAddrV6};
-    use std::{fs, io::Error, net::TcpListener};
-    const README: &str = "README.md";
-    #[test]
-    #[ignore]
-    fn test_pledge_unveil() {
-        const FILE_EXISTS: &str = "/home/zack/foo.txt";
-        _ = fs::metadata(FILE_EXISTS)
-            .expect(format!("{FILE_EXISTS} does not exist, so unit testing cannot occur").as_str());
-        const FILE_NOT_EXISTS: &str = "/home/zack/aadkjfasj3s23";
-        drop(fs::metadata(FILE_NOT_EXISTS).expect_err(
-            format!("{FILE_NOT_EXISTS} exists, so unit testing cannot occur").as_str(),
-        ));
-        const DIR_NOT_EXISTS: &str = "/home/zack/aadkjfasj3s23/";
-        drop(
-            fs::metadata(DIR_NOT_EXISTS).expect_err(
-                format!("{DIR_NOT_EXISTS} exists, so unit testing cannot occur").as_str(),
-            ),
-        );
-        // This tests that a NULL `promise` does nothing.
-        assert!(Promises::pledge_none().is_ok());
-        print!("");
-        assert!(Promises::ALL.pledge().is_ok());
-        // This tests that duplicates are ignored as well as the implementation of PartialEq.
-        let mut initial_promises = Promises::new([
-            Promise::Stdio,
-            Promise::Unveil,
-            Promise::Rpath,
-            Promise::Stdio,
-        ]);
-        assert!(initial_promises.len() == 3);
-        assert!(
-            initial_promises == Promises::new([Promise::Rpath, Promise::Stdio, Promise::Unveil])
-        );
-        // Test retain.
-        assert!({
-            let mut vals = Promises::new([
-                Promise::Audio,
-                Promise::Bpf,
-                Promise::Chown,
-                Promise::Cpath,
-                Promise::Error,
-                Promise::Exec,
-            ]);
-            vals.retain([Promise::Error, Promise::Chown]);
-            vals.len() == 2 && vals.contains(Promise::Chown) && vals.contains(Promise::Error)
-        });
-        assert!(initial_promises.pledge().is_ok());
-        // This tests unveil with no permissions.
-        assert!(Permissions::NONE.unveil(FILE_EXISTS).is_ok());
-        assert!(fs::metadata(FILE_EXISTS).is_err());
-        // This tests unveil with read permissions,
-        // and one can unveil more permissions (unlike pledge which can only remove promises).
-        assert!(Permissions::READ.unveil(FILE_EXISTS).is_ok());
-        assert!(fs::metadata(FILE_EXISTS).is_ok());
-        // This tests that calls to unveil on missing files don't error.
-        assert!(Permissions::NONE.unveil(FILE_NOT_EXISTS).is_ok());
-        // This tests that calls to unveil on missing directories error.
-        assert!(Permissions::NONE.unveil(DIR_NOT_EXISTS).is_err());
-        // This tests that unveil can no longer be called.
-        assert!(Permissions::unveil_no_more().is_ok());
-        assert!(Permissions::NONE.unveil(FILE_EXISTS).is_err());
-        assert!(fs::metadata(FILE_EXISTS).is_ok());
-        // The below tests that Promises can only be removed and not added.
-        initial_promises.remove_promises([Promise::Unveil]);
-        assert_eq!(initial_promises.len(), 2);
-        initial_promises.remove(Promise::Rpath);
-        assert_eq!(initial_promises.len(), 1);
-        initial_promises.remove(Promise::Rpath);
-        assert_eq!(initial_promises.len(), 1);
-        assert!(initial_promises.pledge().is_ok());
-        print!("");
-        assert!(Promises::new([Promise::Rpath]).pledge().is_err());
-        // If the below is uncommented, the program should crash since the above
-        // call to pledge no longer allows access to the file system.
-        // drop(fs::metadata(FILE_EXISTS));
-    }
-    #[test]
-    #[ignore]
-    fn test_pledge_priv_drop() -> Result<(), PrivDropErr<Error>> {
-        if Uid::geteuid().is_root() {
-            Promises::new_priv_drop(
-                "zack",
-                [Promise::Inet, Promise::Rpath, Promise::Unveil],
-                false,
-                || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)),
-            )
-            .and_then(|(_, mut promises)| {
-                Permissions::READ
-                    .unveil(README)
-                    .map_err(PrivDropErr::from)
-                    .and_then(|()| {
-                        fs::exists(README)
-                            .map_err(PrivDropErr::Io)
-                            .and_then(|exists| {
-                                Permissions::NONE
-                                    .unveil(README)
-                                    .map_err(PrivDropErr::from)
-                                    .and_then(|()| {
-                                        promises
-                                            .remove_promises_then_pledge([
-                                                Promise::Rpath,
-                                                Promise::Unveil,
-                                            ])
-                                            .map_err(PrivDropErr::Io)
-                                            .map(|()| {
-                                                assert!(exists);
-                                                assert!(
-                                                    TcpListener::bind(SocketAddrV6::new(
-                                                        Ipv6Addr::LOCALHOST,
-                                                        80,
-                                                        0,
-                                                        0
-                                                    ))
-                                                    .is_err()
-                                                );
-                                            })
-                                    })
-                            })
-                    })
-            })
-        } else {
-            Ok(())
-        }
-    }
-    #[test]
-    #[ignore]
-    fn test_pledge_chroot_priv_drop() -> Result<(), PrivDropErr<Error>> {
-        if Uid::geteuid().is_root() {
-            Promises::new_chroot_then_priv_drop(
-                "zack",
-                "./",
-                [Promise::Inet, Promise::Rpath, Promise::Unveil],
-                false,
-                || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)),
-            )
-            .and_then(|(_, mut promises)| {
-                Permissions::READ
-                    .unveil(README)
-                    .map_err(PrivDropErr::from)
-                    .and_then(|()| {
-                        fs::exists(README)
-                            .map_err(PrivDropErr::Io)
-                            .and_then(|exists| {
-                                Permissions::NONE
-                                    .unveil(README)
-                                    .map_err(PrivDropErr::from)
-                                    .and_then(|()| {
-                                        promises
-                                            .remove_promises_then_pledge([
-                                                Promise::Rpath,
-                                                Promise::Unveil,
-                                            ])
-                                            .map_err(PrivDropErr::Io)
-                                            .map(|()| {
-                                                assert!(exists);
-                                                assert!(
-                                                    TcpListener::bind(SocketAddrV6::new(
-                                                        Ipv6Addr::LOCALHOST,
-                                                        80,
-                                                        0,
-                                                        0
-                                                    ))
-                                                    .is_err()
-                                                );
-                                            })
-                                    })
-                            })
-                    })
-            })
-        } else {
-            Ok(())
-        }
     }
 }

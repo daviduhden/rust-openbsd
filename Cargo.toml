@@ -1,7 +1,7 @@
 [package]
 authors = ["Zack Newman <zack@philomathiclife.com>"]
-categories = ["external-ffi-bindings", "os::unix-apis"]
-description = "FFI for setresuid(2), setresgid(2), chroot(2), pledge(2), and unveil(2)."
+categories = ["external-ffi-bindings", "no-std::no-alloc", "os::unix-apis"]
+description = "FFI for setgroups(2), setresuid(2), setresgid(2), chroot(2), pledge(2), and unveil(2)."
 documentation = "https://docs.rs/priv_sep/latest/priv_sep/"
 edition = "2024"
 keywords = ["ffi", "openbsd", "privsep", "security", "unix"]
@@ -10,7 +10,7 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.1.3"
+version = "3.0.0-alpha.2.0"
 
 [lints.rust]
 ambiguous_negative_literals = { level = "deny", priority = -1 }
@@ -23,7 +23,7 @@ future_incompatible = { level = "deny", priority = -1 }
 impl_trait_redundant_captures = { level = "deny", priority = -1 }
 keyword_idents = { level = "deny", priority = -1 }
 let_underscore = { level = "deny", priority = -1 }
-#linker_messages = { level = "deny", priority = -1 }
+linker_messages = { level = "deny", priority = -1 }
 #lossy_provenance_casts = { level = "deny", priority = -1 }
 macro_use_extern_crate = { level = "deny", priority = -1 }
 meta_variable_misuse = { level = "deny", priority = -1 }
@@ -44,9 +44,11 @@ rust_2021_compatibility = { level = "deny", priority = -1 }
 rust_2024_compatibility = { level = "deny", priority = -1 }
 single_use_lifetimes = { level = "deny", priority = -1 }
 #supertrait_item_shadowing_definition = { level = "deny", priority = -1 }
+#supertrait_item_shadowing_usage = { level = "deny", priority = -1 }
 trivial_casts = { level = "deny", priority = -1 }
 trivial_numeric_casts = { level = "deny", priority = -1 }
 unit_bindings = { level = "deny", priority = -1 }
+unknown-or-malformed-diagnostic-attributes = { level = "deny", priority = -1 }
 unnameable_types = { level = "deny", priority = -1 }
 #unqualified_local_imports = { level = "deny", priority = -1 }
 unreachable_pub = { level = "deny", priority = -1 }
@@ -62,7 +64,6 @@ variant_size_differences = { level = "deny", priority = -1 }
 warnings = { level = "deny", priority = -1 }
 
 [lints.clippy]
-all = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
 complexity = { level = "deny", priority = -1 }
 correctness = { level = "deny", priority = -1 }
@@ -81,14 +82,35 @@ implicit_return = "allow"
 min_ident_chars = "allow"
 missing_trait_methods = "allow"
 pub_with_shorthand = "allow"
+question_mark_used = "allow"
 redundant_pub_crate = "allow"
 ref_patterns = "allow"
 return_and_then = "allow"
 single_char_lifetime_names = "allow"
+semicolon_inside_block = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+cargo-args = ["-Zbuild-std=std"]
+default-target = "x86_64-unknown-openbsd"
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "i686-unknown-linux-gnu",
+  "x86_64-unknown-dragonfly",
+  "x86_64-unknown-freebsd",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-netbsd"
+]
 
 [dev-dependencies]
 tokio = { version = "1.47.1", default-features = false, features = ["macros", "net", "rt"] }
+
+
+### FEATURES #################################################################
+
+[features]
+default = ["std"]
+
+# Provide std support.
+std = []

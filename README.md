@@ -6,6 +6,17 @@
 
 `priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction.
 
+Note the only platforms that are currently supported are platforms that correspond to the following
+`target_os` values:
+
+* `dragonfly`
+* `freebsd`
+* `linux`
+* `netbsd`
+* `openbsd`
+
+or the `apple` `target_vendor`.
+
 ## `priv_sep` in action for OpenBSD
 
 ```rust
@@ -25,6 +36,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
     // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
     // Bind to TCP `[::1]:443` as root.
+    // `setgroups(2)` to drop all supplementary groups.
     // `setresgid(2)` to the group ID associated with nobody.
     // `setresuid(2)` to the user ID associated with nobody.
     // Remove `id` from our `pledge(2)`d promises.
@@ -71,6 +83,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     // Get the user ID and group ID for nobody from `passwd(5)`.
     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
     // Bind to TCP `[::1]:443` as root.
+    // `setgroups(2)` to drop all supplementary groups.
     // `setresgid(2)` to the group ID associated with nobody.
     // `setresuid(2)` to the user ID associated with nobody.
     let listener = UserInfo::chroot_then_priv_drop_async("nobody", "/path/chroot/", false, async || {
