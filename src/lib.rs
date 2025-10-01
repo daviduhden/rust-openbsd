@@ -690,6 +690,10 @@ impl UserInfo {
     ///
     /// No-op.
     #[cfg(target_vendor = "apple")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "unify with platforms that support `setgroups`"
+    )]
     const fn drop_sup_groups() -> Result<(), Errno> {
         Ok(())
     }
@@ -958,6 +962,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
+//  # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
 /// assert!(priv_sep::drop_supplementary_groups().is_ok());
 /// ```
 #[cfg_attr(
@@ -975,7 +980,8 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
     target_os = "freebsd",
     target_os = "linux",
     target_os = "netbsd",
-    target_os = "openbsd"
+    target_os = "openbsd",
+    all(doc, target_vendor = "apple")
 ))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]

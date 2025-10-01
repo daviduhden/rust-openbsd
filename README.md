@@ -126,7 +126,9 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
 as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-Before any PR is sent, `cargo clippy` and `cargo t` should be run. Additionally
+Before any PR is sent, `cargo clippy` and `cargo t` should be run _for each possible combination of "features"_
+using the stable and MSRV toolchains. One easy way to achieve this is by invoking
+[`ci-cargo`](https://crates.io/crates/ci-cargo) in the `priv_sep` directory. Additionally,
 `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to ensure documentation can be built.
 
 ### Status
