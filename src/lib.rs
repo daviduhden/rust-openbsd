@@ -7,23 +7,13 @@
 //! `priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction
 //! for Unix-like platforms.
 //!
-//! Note the only platforms that are currently supported are platforms that correspond to the following
-//! `target_os` values:
-//!
-//! * `dragonfly`
-//! * `freebsd`
-//! * `linux`
-//! * `netbsd`
-//! * `openbsd`
-//!
-//! or the `apple` `target_vendor`.
-//!
 //! ## `priv_sep` in action for OpenBSD
 //!
 //! ```no_run
 //! # #[cfg(target_os = "openbsd")]
-//! use core::ffi::CStr;
-//! use core::convert::Infallible;
+//! use core::{convert::Infallible, ffi::CStr};
+//! # #[cfg(not(target_os = "openbsd"))]
+//! # use core::convert::Infallible;
 //! # #[cfg(target_os = "openbsd")]
 //! use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
 //! use std::{
@@ -39,6 +29,11 @@
 //! async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 //!     /// Config file.
 //!     const CONFIG: &CStr = c"config";
+//!     /// Config file.
+//!     const CONFIG_STR: &str = match CONFIG.to_str() {
+//!         Ok(val) => val,
+//!         Err(_) => panic!("config is not a valid str"),
+//!     };
 //!     // Get the user ID and group ID for nobody from `passwd(5)`.
 //!     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
 //!     // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
@@ -53,14 +48,15 @@
 //!         [Promise::Inet, Promise::Rpath, Promise::Unveil],
 //!         false,
 //!         async || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await,
-//!     ).await?;
+//!     )
+//!     .await?;
 //!     // At this point, the process is running under nobody.
 //!     // Only allow file system access to `config` and only allow read access to it.
 //!     Permissions::READ.unveil(CONFIG)?;
 //!     // Read `config`.
 //!     // This will of course fail if the file does not exist or nobody does not
 //!     // have read permissions.
-//!     let config = fs::read(CONFIG.to_str().unwrap_or_else(|_e| unreachable!("only contains UTF-8"))).map_err(PrivDropErr::Other)?;
+//!     let config = fs::read(CONFIG_STR).map_err(PrivDropErr::Other)?;
 //!     // Remove file system access.
 //!     Permissions::NONE.unveil(CONFIG)?;
 //!     // Remove `rpath` and `unveil` from our `pledge(2)`d promises
@@ -79,7 +75,7 @@
 //!
 //! ```no_run
 //! use core::convert::Infallible;
-//! use priv_sep::{UserInfo, PrivDropErr};
+//! use priv_sep::{PrivDropErr, UserInfo};
 //! use std::{
 //!     io::Error,
 //!     net::{Ipv6Addr, SocketAddrV6},
@@ -93,9 +89,11 @@
 //!     // `setgroups(2)` to drop all supplementary groups.
 //!     // `setresgid(2)` to the group ID associated with nobody.
 //!     // `setresuid(2)` to the user ID associated with nobody.
-//!     let listener = UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
-//!         TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
-//!     }).await?;
+//!     let listener =
+//!         UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
+//!             TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
+//!         })
+//!         .await?;
 //!     // At this point, the process is running under nobody.
 //!     loop {
 //!         // Handle TCP connections.
@@ -111,11 +109,11 @@
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "linux",
+    target_os = "macos",
     target_os = "netbsd",
-    target_os = "openbsd",
-    target_vendor = "apple"
+    target_os = "openbsd"
 ))]
-#![allow(
+#![expect(
     clippy::pub_use,
     reason = "don't want Errno nor openbsd types in a module"
 )]
@@ -210,7 +208,7 @@ impl Uid {
             target_os = "openbsd"
         ))]
         let code = c::setresuid(self.0, self.0, self.0);
-        #[cfg(any(target_os = "netbsd", target_vendor = "apple"))]
+        #[cfg(any(target_os = "macos", target_os = "netbsd"))]
         let code = c::setuid(self.0);
         if code == SUCCESS {
             Ok(())
@@ -304,7 +302,7 @@ impl Gid {
             target_os = "openbsd"
         ))]
         let code = c::setresgid(self.0, self.0, self.0);
-        #[cfg(any(target_os = "netbsd", target_vendor = "apple"))]
+        #[cfg(any(target_os = "macos", target_os = "netbsd"))]
         let code = c::setgid(self.0);
         if code == SUCCESS {
             Ok(())
@@ -413,7 +411,7 @@ pub fn chroot_then_chdir(path: &CStr) -> Result<(), Errno> {
     chroot(path).and_then(|()| private_chdir(ROOT))
 }
 /// Error returned when dropping privileges.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrivDropErr<E> {
     /// Error when an error occurs from a libc call.
     Libc(Errno),
@@ -448,7 +446,7 @@ impl<E> From<Errno> for PrivDropErr<E> {
     }
 }
 /// Error returned from [`UserInfo::setresid_if_valid`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SetresidErr {
     /// Error when an error occurs from a libc call.
     Libc(Errno),
@@ -689,7 +687,7 @@ impl UserInfo {
     /// Helper to unify targets that don't support `setgroups(2)`.
     ///
     /// No-op.
-    #[cfg(target_vendor = "apple")]
+    #[cfg(target_os = "macos")]
     #[expect(
         clippy::unnecessary_wraps,
         reason = "unify with platforms that support `setgroups`"
@@ -981,7 +979,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
     target_os = "linux",
     target_os = "netbsd",
     target_os = "openbsd",
-    all(doc, target_vendor = "apple")
+    all(doc, target_os = "macos")
 ))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
@@ -1015,9 +1013,17 @@ mod tests {
     #[cfg(feature = "std")]
     use core::net::{Ipv6Addr, SocketAddrV6};
     #[cfg(all(feature = "std", target_os = "openbsd"))]
-    use std::{format, print};
+    extern crate alloc;
+    #[cfg(all(feature = "std", target_os = "openbsd"))]
+    use alloc::format;
+    #[cfg(all(feature = "std", target_os = "openbsd"))]
+    use std::io::{self, Write as _};
     #[cfg(feature = "std")]
-    use std::{fs, io::Error, net::TcpListener};
+    use std::{
+        fs,
+        io::{Error, ErrorKind},
+        net::TcpListener,
+    };
     use tokio as _;
     #[cfg(feature = "std")]
     const README: &CStr = c"README.md";
@@ -1027,45 +1033,51 @@ mod tests {
         Err(_) => panic!("not possible"),
     };
     #[test]
-    fn test_getuid() {
+    fn getuid() {
         _ = Uid::getuid();
     }
     #[test]
-    fn test_geteuid() {
+    fn geteuid() {
         _ = Uid::geteuid();
     }
     #[test]
-    fn test_getgid() {
+    fn getgid() {
         _ = Gid::getgid();
     }
     #[test]
-    fn test_getegid() {
+    fn getegid() {
         _ = Gid::getegid();
     }
     #[test]
-    fn test_setresuid() -> Result<(), Errno> {
+    fn setresuid() -> Result<(), Errno> {
         Uid::geteuid().setresuid()
     }
     #[test]
-    fn test_setresgid() -> Result<(), Errno> {
+    fn setresgid() -> Result<(), Errno> {
         Gid::getegid().setresgid()
     }
     #[test]
-    fn test_user_info_new() -> Result<(), Errno> {
-        if let Some(user) = UserInfo::new(c"root")? {
-            assert!(user.is_root());
-        }
-        Ok(())
+    fn user_info_new() {
+        assert_eq!(
+            UserInfo::new(c"root"),
+            Ok(Some(UserInfo {
+                uid: Uid::ROOT,
+                gid: Gid(0),
+            }))
+        );
     }
     #[test]
-    fn test_user_info_with_buffer() -> Result<(), Errno> {
-        if let Some(user) = UserInfo::with_buffer(c"root", [0; 512].as_mut_slice())? {
-            assert!(user.is_root());
-        }
-        Ok(())
+    fn user_info_with_buffer() {
+        assert_eq!(
+            UserInfo::with_buffer(c"root", [0; 512].as_mut_slice()),
+            Ok(Some(UserInfo {
+                uid: Uid::ROOT,
+                gid: Gid(0),
+            }))
+        );
     }
     #[test]
-    fn test_user_info_setresid() -> Result<(), Errno> {
+    fn user_info_setresid() -> Result<(), Errno> {
         UserInfo {
             uid: Uid::geteuid(),
             gid: Gid::getegid(),
@@ -1073,7 +1085,7 @@ mod tests {
         .setresid()
     }
     #[test]
-    fn test_user_info_setresid_if_exists() -> Result<(), SetresidErr> {
+    fn user_info_setresid_if_exists() -> Result<(), SetresidErr> {
         UserInfo {
             uid: Uid::geteuid(),
             gid: Gid::getegid(),
@@ -1081,92 +1093,102 @@ mod tests {
         .setresid_if_valid()
     }
     #[test]
-    fn test_user_info_setresid_if_exists_failure() {
-        assert!(
+    fn user_info_setresid_if_exists_failure() {
+        assert_eq!(
             UserInfo {
                 uid: Uid::geteuid(),
                 gid: Gid(u32::MAX),
             }
-            .setresid_if_valid()
-            .map_or_else(|e| matches!(e, SetresidErr::GidMismatch), |_| false)
+            .setresid_if_valid(),
+            Err(SetresidErr::GidMismatch)
         );
     }
     #[cfg(feature = "std")]
     #[test]
-    #[ignore]
-    fn test_priv_drop() -> Result<(), PrivDropErr<Error>> {
+    #[ignore = "primarily useful for root and interferes with chroot_drop_priv"]
+    fn priv_drop() {
         if Uid::geteuid().is_root() {
-            UserInfo::priv_drop(c"nobody", || {
-                TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0))
-            })
-            .map(|_| {
-                assert!(
-                    TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 80, 0, 0)).is_err()
-                );
-            })
+            assert!(
+                UserInfo::priv_drop(c"nobody", || {
+                    TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0))
+                })
+                .is_ok_and(|_| true)
+            );
+            assert!(
+                TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 80, 0, 0)).map_or_else(
+                    |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+                    |_| false
+                )
+            );
         } else {
             assert!(
                 UserInfo::priv_drop(c"root", || Ok::<_, Error>(()))
-                    .map_or_else(|e| matches!(e, PrivDropErr::RootEntry), |_| false)
+                    .map_or_else(|e| matches!(e, PrivDropErr::RootEntry), |()| false)
             );
-            Ok(())
         }
     }
     #[cfg(feature = "std")]
     #[test]
-    #[ignore]
-    fn test_chroot_priv_drop() -> Result<(), PrivDropErr<Error>> {
+    #[ignore = "primarily useful for root and interferes with priv_drop"]
+    fn chroot_drop_priv() {
         if Uid::geteuid().is_root() {
-            UserInfo::chroot_then_priv_drop(c"nobody", c"./", false, || {
-                TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 987, 0, 0))
-            })
-            .and_then(|_| {
-                fs::exists(README_STR)
-                    .map_err(PrivDropErr::Other)
-                    .map(|exists| {
-                        assert!(exists);
-                        assert!(
-                            TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 82, 0, 0))
-                                .is_err()
-                        );
+            assert!(
+                UserInfo::chroot_then_priv_drop(c"nobody", c"./", false, || {
+                    TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 987, 0, 0))
+                })
+                .is_ok_and(|_| {
+                    fs::exists(README_STR).is_ok_and(|exists| {
+                        exists
+                            && TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 82, 0, 0))
+                                .map_or_else(
+                                    |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+                                    |_| false,
+                                )
                     })
-            })
-        } else {
-            Ok(())
+                })
+            );
         }
     }
+    #[expect(
+        clippy::panic,
+        reason = "reasonable to expect files to not exist that need to in order to test pledge and unveil"
+    )]
+    #[expect(
+        clippy::expect_used,
+        reason = "kinda reasonable to expect files to exist that mustn't in order to test pledge and unveil"
+    )]
     #[cfg(all(feature = "std", target_os = "openbsd"))]
     #[test]
-    #[ignore]
-    fn test_pledge_unveil() {
+    #[ignore = "interferes with other tests"]
+    fn unveil_pledge() {
         const FILE_EXISTS: &CStr = c"/home/zack/foo.txt";
         const FILE_EXISTS_STR: &str = match FILE_EXISTS.to_str() {
             Ok(val) => val,
             Err(_) => panic!("not possible"),
         };
-        _ = fs::metadata(FILE_EXISTS_STR).expect(
-            format!("{FILE_EXISTS_STR} does not exist, so unit testing cannot occur").as_str(),
-        );
         const FILE_NOT_EXISTS: &CStr = c"/home/zack/aadkjfasj3s23";
         const FILE_NOT_EXISTS_STR: &str = match FILE_NOT_EXISTS.to_str() {
             Ok(val) => val,
             Err(_) => panic!("not possible"),
         };
-        drop(fs::metadata(FILE_NOT_EXISTS_STR).expect_err(
-            format!("{FILE_NOT_EXISTS_STR} exists, so unit testing cannot occur").as_str(),
-        ));
         const DIR_NOT_EXISTS: &CStr = c"/home/zack/aadkjfasj3s23/";
         const DIR_NOT_EXISTS_STR: &str = match DIR_NOT_EXISTS.to_str() {
             Ok(val) => val,
             Err(_) => panic!("not possible"),
         };
+        _ = fs::metadata(FILE_EXISTS_STR).unwrap_or_else(|_e| {
+            panic!("{FILE_EXISTS_STR} does not exist, so unit testing cannot occur")
+        });
+        drop(fs::metadata(FILE_NOT_EXISTS_STR).expect_err(
+            format!("{FILE_NOT_EXISTS_STR} exists, so unit testing cannot occur").as_str(),
+        ));
         drop(fs::metadata(DIR_NOT_EXISTS_STR).expect_err(
             format!("{DIR_NOT_EXISTS_STR} exists, so unit testing cannot occur").as_str(),
         ));
         // This tests that a NULL `promise` does nothing.
-        assert!(Promises::pledge_none().is_ok());
-        print!("");
-        assert!(Promises::ALL.pledge().is_ok());
+        assert_eq!(Promises::pledge_none(), Ok(()));
+        assert!(writeln!(io::stdout()).is_ok_and(|()| true));
+        assert_eq!(Promises::ALL.pledge(), Ok(()));
         // This tests that duplicates are ignored as well as the implementation of PartialEq.
         let mut initial_promises = Promises::new([
             Promise::Stdio,
@@ -1174,39 +1196,43 @@ mod tests {
             Promise::Rpath,
             Promise::Stdio,
         ]);
-        assert!(initial_promises.len() == 3);
-        assert!(
-            initial_promises == Promises::new([Promise::Rpath, Promise::Stdio, Promise::Unveil])
+        assert_eq!(initial_promises.len(), 3);
+        assert_eq!(
+            initial_promises,
+            Promises::new([Promise::Rpath, Promise::Stdio, Promise::Unveil])
         );
         // Test retain.
-        assert!({
-            let mut vals = Promises::new([
-                Promise::Audio,
-                Promise::Bpf,
-                Promise::Chown,
-                Promise::Cpath,
-                Promise::Error,
-                Promise::Exec,
-            ]);
-            vals.retain([Promise::Error, Promise::Chown]);
-            vals.len() == 2 && vals.contains(Promise::Chown) && vals.contains(Promise::Error)
-        });
-        assert!(initial_promises.pledge().is_ok());
+        let mut vals = Promises::new([
+            Promise::Audio,
+            Promise::Bpf,
+            Promise::Chown,
+            Promise::Cpath,
+            Promise::Error,
+            Promise::Exec,
+        ]);
+        vals.retain([Promise::Error, Promise::Chown]);
+        assert_eq!(vals.len(), 2);
+        assert!(vals.contains(Promise::Chown));
+        assert!(vals.contains(Promise::Error));
+        assert_eq!(initial_promises.pledge(), Ok(()));
         // This tests unveil with no permissions.
-        assert!(Permissions::NONE.unveil(FILE_EXISTS).is_ok());
-        assert!(fs::metadata(FILE_EXISTS_STR).is_err());
+        assert_eq!(Permissions::NONE.unveil(FILE_EXISTS), Ok(()));
+        assert!(fs::metadata(FILE_EXISTS_STR).map_or_else(
+            |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+            |_| false
+        ));
         // This tests unveil with read permissions,
         // and one can unveil more permissions (unlike pledge which can only remove promises).
-        assert!(Permissions::READ.unveil(FILE_EXISTS).is_ok());
-        assert!(fs::metadata(FILE_EXISTS_STR).is_ok());
+        assert_eq!(Permissions::READ.unveil(FILE_EXISTS), Ok(()));
+        assert!(fs::metadata(FILE_EXISTS_STR).is_ok_and(|_| true));
         // This tests that calls to unveil on missing files don't error.
-        assert!(Permissions::NONE.unveil(FILE_NOT_EXISTS).is_ok());
+        assert_eq!(Permissions::NONE.unveil(FILE_NOT_EXISTS), Ok(()));
         // This tests that calls to unveil on missing directories error.
-        assert!(Permissions::NONE.unveil(DIR_NOT_EXISTS).is_err());
+        assert_eq!(Permissions::NONE.unveil(DIR_NOT_EXISTS), Err(Errno::ENOENT));
         // This tests that unveil can no longer be called.
-        assert!(Permissions::unveil_no_more().is_ok());
-        assert!(Permissions::NONE.unveil(FILE_EXISTS).is_err());
-        assert!(fs::metadata(FILE_EXISTS_STR).is_ok());
+        assert_eq!(Permissions::unveil_no_more(), Ok(()));
+        assert_eq!(Permissions::NONE.unveil(FILE_EXISTS), Err(Errno::EPERM));
+        assert!(fs::metadata(FILE_EXISTS_STR).is_ok_and(|_| true));
         // The below tests that Promises can only be removed and not added.
         initial_promises.remove_promises([Promise::Unveil]);
         assert_eq!(initial_promises.len(), 2);
@@ -1214,105 +1240,82 @@ mod tests {
         assert_eq!(initial_promises.len(), 1);
         initial_promises.remove(Promise::Rpath);
         assert_eq!(initial_promises.len(), 1);
-        assert!(initial_promises.pledge().is_ok());
-        print!("");
-        assert!(Promises::new([Promise::Rpath]).pledge().is_err());
+        assert_eq!(initial_promises.pledge(), Ok(()));
+        assert!(writeln!(io::stdout()).is_ok_and(|()| true));
+        assert_eq!(Promises::new([Promise::Rpath]).pledge(), Err(Errno::EPERM));
         // If the below is uncommented, the program should crash since the above
         // call to pledge no longer allows access to the file system.
         // drop(fs::metadata(FILE_EXISTS_STR));
     }
     #[cfg(all(feature = "std", target_os = "openbsd"))]
     #[test]
-    #[ignore]
-    fn test_pledge_priv_drop() -> Result<(), PrivDropErr<Error>> {
+    #[ignore = "interferes with other tests when root"]
+    fn pledge_inet_drop_priv() {
         if Uid::geteuid().is_root() {
-            Promises::new_priv_drop(
-                c"nobody",
-                [Promise::Inet, Promise::Rpath, Promise::Unveil],
-                false,
-                || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 47, 0, 0)),
-            )
-            .and_then(|(_, _)| {
-                Permissions::unveil_raw(README, c"r")
-                    .map_err(PrivDropErr::Libc)
-                    .and_then(|()| {
-                        fs::exists(README_STR)
-                            .map_err(PrivDropErr::Other)
-                            .and_then(|exists| {
-                                Permissions::NONE
-                                    .unveil(README)
-                                    .map_err(PrivDropErr::Libc)
-                                    .and_then(|()| {
-                                        Promises::pledge_raw(c"inet stdio")
-                                            .map_err(PrivDropErr::Libc)
-                                            .map(|()| {
-                                                assert!(exists);
-                                                assert!(
-                                                    TcpListener::bind(SocketAddrV6::new(
-                                                        Ipv6Addr::LOCALHOST,
-                                                        792,
-                                                        0,
-                                                        0
-                                                    ))
-                                                    .is_err()
-                                                );
-                                            })
-                                    })
+            assert!(
+                Promises::new_priv_drop(
+                    c"nobody",
+                    [Promise::Inet, Promise::Rpath, Promise::Unveil],
+                    false,
+                    || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 47, 0, 0)),
+                )
+                .is_ok_and(|(_, _)| {
+                    Permissions::unveil_raw(README, c"r").is_ok_and(|()| {
+                        fs::exists(README_STR).is_ok_and(|exists| {
+                            Permissions::NONE.unveil(README).is_ok_and(|()| {
+                                Promises::pledge_raw(c"inet stdio").is_ok_and(|()| {
+                                    exists
+                                        && TcpListener::bind(SocketAddrV6::new(
+                                            Ipv6Addr::LOCALHOST,
+                                            792,
+                                            0,
+                                            0,
+                                        ))
+                                        .map_or_else(
+                                            |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+                                            |_| false,
+                                        )
+                                })
                             })
+                        })
                     })
-            })
-        } else {
-            Ok(())
+                })
+            );
         }
     }
     #[cfg(all(feature = "std", target_os = "openbsd"))]
     #[test]
-    #[ignore]
-    fn test_pledge_chroot_priv_drop() -> Result<(), PrivDropErr<Error>> {
+    #[ignore = "interferes with other tests when root"]
+    fn inet_chroot_priv_pledge() {
         if Uid::geteuid().is_root() {
-            Promises::new_chroot_then_priv_drop(
-                c"nobody",
-                c"./",
-                [Promise::Inet, Promise::Rpath, Promise::Unveil],
-                false,
-                || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 382, 0, 0)),
-            )
-            .and_then(|(_, mut promises)| {
-                Permissions::READ
+            assert!(
+                Promises::new_chroot_then_priv_drop(
+                    c"nobody",
+                    c"./",
+                    [Promise::Inet, Promise::Rpath, Promise::Unveil],
+                    false,
+                    || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 382, 0, 0))
+                )
+                .is_ok_and(|(_, mut promises)| Permissions::READ
                     .unveil(README)
-                    .map_err(PrivDropErr::Libc)
-                    .and_then(|()| {
-                        fs::exists(README_STR)
-                            .map_err(PrivDropErr::Other)
-                            .and_then(|exists| {
-                                Permissions::NONE
-                                    .unveil(README)
-                                    .map_err(PrivDropErr::Libc)
-                                    .and_then(|()| {
-                                        promises
-                                            .remove_promises_then_pledge([
-                                                Promise::Rpath,
-                                                Promise::Unveil,
-                                            ])
-                                            .map_err(PrivDropErr::Libc)
-                                            .map(|()| {
-                                                assert!(exists);
-                                                assert!(
-                                                    TcpListener::bind(SocketAddrV6::new(
-                                                        Ipv6Addr::LOCALHOST,
-                                                        588,
-                                                        0,
-                                                        0
-                                                    ))
-                                                    .is_err()
-                                                );
-                                            })
-                                    })
-                            })
-                    })
-            })
-        } else {
-            Ok(())
+                    .is_ok_and(
+                        |()| fs::exists(README_STR).is_ok_and(|exists| Permissions::NONE
+                            .unveil(README)
+                            .is_ok_and(|()| promises
+                                .remove_promises_then_pledge([Promise::Rpath, Promise::Unveil])
+                                .is_ok_and(|()| exists
+                                    && TcpListener::bind(SocketAddrV6::new(
+                                        Ipv6Addr::LOCALHOST,
+                                        588,
+                                        0,
+                                        0
+                                    ))
+                                    .map_or_else(
+                                        |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+                                        |_| false
+                                    ))))
+                    ))
+            );
         }
     }
 }

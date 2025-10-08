@@ -7,9 +7,9 @@ pub(crate) const SUCCESS: c_int = 0;
     any(
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd",
-        target_vendor = "apple"
+        target_os = "openbsd"
     ),
     target_arch = "aarch64",
     target_pointer_width = "32"
@@ -20,9 +20,9 @@ type TimeT = i32;
     any(
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd",
-        target_vendor = "apple"
+        target_os = "openbsd"
     ),
     not(all(target_arch = "aarch64", target_pointer_width = "32"))
 ))]
@@ -42,18 +42,18 @@ pub(crate) struct Passwd {
     #[cfg(any(
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd",
-        target_vendor = "apple"
+        target_os = "openbsd"
     ))]
     change: TimeT,
     /// User access class.
     #[cfg(any(
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd",
-        target_vendor = "apple"
+        target_os = "openbsd"
     ))]
     class: *mut c_char,
     /// User information.
@@ -66,9 +66,9 @@ pub(crate) struct Passwd {
     #[cfg(any(
         target_os = "dragonfly",
         target_os = "freebsd",
+        target_os = "macos",
         target_os = "netbsd",
-        target_os = "openbsd",
-        target_vendor = "apple"
+        target_os = "openbsd"
     ))]
     expire: TimeT,
     /// Internal fields.
@@ -103,7 +103,7 @@ unsafe extern "C" {
     ))]
     pub(crate) safe fn setresuid(ruid: u32, euid: u32, suid: u32) -> c_int;
     /// [`setuid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setuid.html#).
-    #[cfg(any(target_os = "netbsd", target_vendor = "apple"))]
+    #[cfg(any(target_os = "macos", target_os = "netbsd"))]
     pub(crate) safe fn setuid(uid: u32) -> c_int;
     /// [`setresgid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setresgid.html).
     #[cfg(any(
@@ -114,7 +114,7 @@ unsafe extern "C" {
     ))]
     pub(crate) safe fn setresgid(rgid: u32, egid: u32, sgid: u32) -> c_int;
     /// [`setgid`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/setgid.html#).
-    #[cfg(any(target_os = "netbsd", target_vendor = "apple"))]
+    #[cfg(any(target_os = "macos", target_os = "netbsd"))]
     pub(crate) safe fn setgid(gid: u32) -> c_int;
     /// [`chroot(2)`](https://manned.org/chroot.2).
     pub(crate) fn chroot(path: *const c_char) -> c_int;
@@ -151,7 +151,7 @@ unsafe extern "C" {
     #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
     pub(crate) fn __errno() -> *mut c_int;
     /// [`__error`](https://github.com/freebsd/freebsd-src/blob/main/sys/sys/errno.h#L43).
-    #[cfg(any(target_os = "freebsd", target_vendor = "apple"))]
+    #[cfg(any(target_os = "freebsd", target_os = "macos"))]
     pub(crate) fn __error() -> *mut c_int;
     /// [`__errno_location`](https://sourceware.org/git/?p=glibc.git;a=blob;f=include/errno.h;h=f0ccaa74dd8bebed83e4adfbf301339efeae3cdb;hb=HEAD#l37).
     #[cfg(any(target_os = "dragonfly", target_os = "linux"))]

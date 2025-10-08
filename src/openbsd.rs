@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, doc(cfg(target_os = "openbsd")))]
 #[cfg(doc)]
 use super::chroot_then_chdir;
 use super::{Errno, PrivDropErr, SUCCESS, UserInfo};

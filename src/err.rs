@@ -563,7 +563,7 @@ impl Errno {
             97 => Self::EINTEGRITY,
             _ => Self::Other(OtherErrno(code)),
         }
-        #[cfg(target_vendor = "apple")]
+        #[cfg(target_os = "macos")]
         match code {
             1 => Self::EPERM,
             2 => Self::ENOENT,
@@ -1346,7 +1346,7 @@ impl Errno {
             | Self::ENOPOLICY
             | Self::EQFULL => impossible!(),
         }
-        #[cfg(target_vendor = "apple")]
+        #[cfg(target_os = "macos")]
         match self {
             Self::EPERM => 1,
             Self::ENOENT => 2,
@@ -1992,7 +1992,7 @@ impl Errno {
         unsafe {
             c::__errno()
         }
-        #[cfg(any(target_os = "freebsd", target_vendor = "apple"))]
+        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
         // SAFETY:
         // Safe because errno is a thread-local variable.
         unsafe {

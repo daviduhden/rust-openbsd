@@ -1,4 +1,5 @@
-# `priv_sep`
+Privilege separation library for Unix-likes OSes
+================================================
 
 [<img alt="git" src="https://git.philomathiclife.com/badges/priv_sep.svg" height="20">](https://git.philomathiclife.com/priv_sep/log.html)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/priv_sep.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/priv_sep)
@@ -12,15 +13,14 @@ Note the only platforms that are currently supported are platforms that correspo
 * `dragonfly`
 * `freebsd`
 * `linux`
+* `macos`
 * `netbsd`
 * `openbsd`
-
-or the `apple` `target_vendor`.
 
 ## `priv_sep` in action for OpenBSD
 
 ```rust
-use core::convert::Infallible;
+use core::{convert::Infallible, ffi::CStr};
 use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
 use std::{
     fs,
@@ -31,7 +31,12 @@ use tokio::net::TcpListener;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     /// Config file.
-    const CONFIG: &str = "config";
+    const CONFIG: &CStr = c"config";
+    /// Config file.
+    const CONFIG_STR: &str = match CONFIG.to_str() {
+        Ok(val) => val,
+        Err(_) => panic!("config is not a valid str"),
+    };
     // Get the user ID and group ID for nobody from `passwd(5)`.
     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
     // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
@@ -41,19 +46,20 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     // `setresuid(2)` to the user ID associated with nobody.
     // Remove `id` from our `pledge(2)`d promises.
     let (listener, mut promises) = Promises::new_chroot_then_priv_drop_async(
-        "nobody",
-        "/path/chroot/",
+        c"nobody",
+        c"/path/chroot/",
         [Promise::Inet, Promise::Rpath, Promise::Unveil],
         false,
         async || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await,
-    ).await?;
+    )
+    .await?;
     // At this point, the process is running under nobody.
     // Only allow file system access to `config` and only allow read access to it.
     Permissions::READ.unveil(CONFIG)?;
     // Read `config`.
     // This will of course fail if the file does not exist or nobody does not
     // have read permissions.
-    let config = fs::read(CONFIG)?;
+    let config = fs::read(CONFIG_STR).map_err(PrivDropErr::Other)?;
     // Remove file system access.
     Permissions::NONE.unveil(CONFIG)?;
     // Remove `rpath` and `unveil` from our `pledge(2)`d promises
@@ -72,7 +78,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 
 ```rust
 use core::convert::Infallible;
-use priv_sep::{UserInfo, PrivDropErr};
+use priv_sep::{PrivDropErr, UserInfo};
 use std::{
     io::Error,
     net::{Ipv6Addr, SocketAddrV6},
@@ -86,9 +92,11 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     // `setgroups(2)` to drop all supplementary groups.
     // `setresgid(2)` to the group ID associated with nobody.
     // `setresuid(2)` to the user ID associated with nobody.
-    let listener = UserInfo::chroot_then_priv_drop_async("nobody", "/path/chroot/", false, async || {
-        TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
-    }).await?;
+    let listener =
+        UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
+            TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
+        })
+        .await?;
     // At this point, the process is running under nobody.
     loop {
         // Handle TCP connections.
@@ -126,12 +134,15 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
 as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-Before any PR is sent, `cargo clippy` and `cargo t` should be run _for each possible combination of "features"_
-using the stable and MSRV toolchains. One easy way to achieve this is by invoking
-[`ci-cargo`](https://crates.io/crates/ci-cargo) in the `priv_sep` directory. Additionally,
-`RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to ensure documentation can be built.
+Before any PR is sent, `cargo clippy --all-targets` and `cargo t` should be run _for each possible combination of
+"features"_ using the stable and MSRV toolchains. One easy way to achieve this is by invoking
+[`ci-cargo`](https://crates.io/crates/ci-cargo) with the `--all-targets` option in the `priv_sep` directory.
+Additionally, one should test all `ignore` tests as both root and non-root. When run as root or on OpenBSD,
+`ignore` tests should be run separately. Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features`
+should be run to ensure documentation can be built on non-OpenBSD platforms; otherwise `cargo doc --all-features`
+should be run.
 
 ### Status
 
 The crate is only tested on the `x86_64-unknown-linux-gnu`, `x86_64-unknown-openbsd`, and `aarch64-apple-darwin`
-targets; but it should work on most platforms.
+targets; but it should work on most of the supported platforms.

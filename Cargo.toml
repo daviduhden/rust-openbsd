@@ -10,7 +10,7 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.2.0"
+version = "3.0.0-alpha.2.1"
 
 [lints.rust]
 ambiguous_negative_literals = { level = "deny", priority = -1 }
@@ -91,15 +91,12 @@ semicolon_inside_block = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
-cargo-args = ["-Zbuild-std=std"]
-default-target = "x86_64-unknown-openbsd"
+default-target = "x86_64-unknown-linux-gnu"
 targets = [
   "aarch64-apple-darwin",
   "aarch64-unknown-linux-gnu",
   "i686-unknown-linux-gnu",
-  "x86_64-unknown-dragonfly",
   "x86_64-unknown-freebsd",
-  "x86_64-unknown-linux-gnu",
   "x86_64-unknown-netbsd"
 ]
 
