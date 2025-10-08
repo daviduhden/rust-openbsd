@@ -960,7 +960,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-//  # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
+///  # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
 /// assert!(priv_sep::drop_supplementary_groups().is_ok());
 /// ```
 #[cfg_attr(
