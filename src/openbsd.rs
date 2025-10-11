@@ -17,7 +17,6 @@ unsafe extern "C" {
 }
 /// A `promise` to [`pledge(2)`](https://man.openbsd.org/pledge.2).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
 pub enum Promise {
     /// [`audio`](https://man.openbsd.org/pledge.2#audio).
     Audio,

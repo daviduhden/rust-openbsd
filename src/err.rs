@@ -15,6 +15,13 @@ use std::io::Error as StdErr;
 pub struct OtherErrno(c_int);
 impl OtherErrno {
     /// Returns the contained error number.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use priv_sep::{Errno, OtherErrno};
+    /// assert!(matches!(Errno::from_raw(0), Errno::Other(err) if err.into_raw() == 0));
+    /// ```
     #[inline]
     #[must_use]
     pub const fn into_raw(self) -> c_int {

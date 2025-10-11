@@ -692,7 +692,7 @@ impl UserInfo {
         clippy::unnecessary_wraps,
         reason = "unify with platforms that support `setgroups`"
     )]
-    const fn drop_sup_groups() -> Result<(), Errno> {
+    const fn drop_sup_groups<Never>() -> Result<(), Never> {
         Ok(())
     }
     /// Helper to unify targets that don't support `setgroups(2)`.
@@ -907,6 +907,13 @@ impl PartialEq<UserInfo> for &UserInfo {
 /// # Errors
 ///
 /// Errors iff `setgroups` does.
+///
+/// # Examples
+///
+/// ```no_run
+/// # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
+/// assert!(priv_sep::setgroups(&[]).is_ok());
+/// ```
 #[cfg_attr(
     docsrs,
     doc(cfg(any(
@@ -922,7 +929,8 @@ impl PartialEq<UserInfo> for &UserInfo {
     target_os = "freebsd",
     target_os = "linux",
     target_os = "netbsd",
-    target_os = "openbsd"
+    target_os = "openbsd",
+    all(doc, target_os = "macos")
 ))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
@@ -960,7 +968,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-///  # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
+/// # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
 /// assert!(priv_sep::drop_supplementary_groups().is_ok());
 /// ```
 #[cfg_attr(
