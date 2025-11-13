@@ -1,7 +1,7 @@
 [package]
 authors = ["Zack Newman <zack@philomathiclife.com>"]
 categories = ["external-ffi-bindings", "no-std::no-alloc", "os::unix-apis"]
-description = "FFI for setgroups(2), setresuid(2), setresgid(2), chroot(2), pledge(2), and unveil(2)."
+description = "FFI for chroot(2), pledge(2), setgroups(2), setresgid(2), setresuid(2), and unveil(2)."
 documentation = "https://docs.rs/priv_sep/latest/priv_sep/"
 edition = "2024"
 keywords = ["ffi", "openbsd", "privsep", "security", "unix"]
@@ -10,7 +10,7 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.2.1"
+version = "3.0.0-alpha.3.0"
 
 [lints.rust]
 ambiguous_negative_literals = { level = "deny", priority = -1 }
@@ -95,13 +95,17 @@ default-target = "x86_64-unknown-linux-gnu"
 targets = [
   "aarch64-apple-darwin",
   "aarch64-unknown-linux-gnu",
+  "aarch64-unknown-linux-musl",
   "i686-unknown-linux-gnu",
+  "powerpc64-unknown-linux-gnu",
+  "riscv64gc-unknown-linux-gnu",
   "x86_64-unknown-freebsd",
+  "x86_64-unknown-linux-musl",
   "x86_64-unknown-netbsd"
 ]
 
 [dev-dependencies]
-tokio = { version = "1.47.1", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.48.0", default-features = false, features = ["macros", "net", "rt"] }
 
 
 ### FEATURES #################################################################

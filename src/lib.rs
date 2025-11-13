@@ -7,13 +7,44 @@
 //! `priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction
 //! for Unix-like platforms.
 //!
-//! ## `priv_sep` in action for OpenBSD
+//! ## `priv_sep` in action
+//!
+//! ```no_run
+//! use core::convert::Infallible;
+//! use priv_sep::{PrivDropErr, UserInfo};
+//! use std::{
+//!     io::Error,
+//!     net::{Ipv6Addr, SocketAddrV6},
+//! };
+//! use tokio::net::TcpListener;
+//! #[tokio::main(flavor = "current_thread")]
+//! async fn main() -> Result<Infallible, PrivDropErr<Error>> {
+//!     // Get the user ID and group ID for nobody from `passwd(5)`.
+//!     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
+//!     // Bind to TCP `[::1]:443` as root.
+//!     // `setgroups(2)` to drop all supplementary groups.
+//!     // `setresgid(2)` to the group ID associated with nobody.
+//!     // `setresuid(2)` to the user ID associated with nobody.
+//!     let listener =
+//!         UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
+//!             TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
+//!         })
+//!         .await?;
+//!     // At this point, the process is running under nobody.
+//!     loop {
+//!         // Handle TCP connections.
+//!         if let Ok((_, ip)) = listener.accept().await {
+//!             assert!(ip.is_ipv6());
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## `priv_sep` in action for OpenBSD incorporating `pledge(2)` and `unveil(2)`
 //!
 //! ```no_run
 //! # #[cfg(target_os = "openbsd")]
 //! use core::{convert::Infallible, ffi::CStr};
-//! # #[cfg(not(target_os = "openbsd"))]
-//! # use core::convert::Infallible;
 //! # #[cfg(target_os = "openbsd")]
 //! use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
 //! use std::{
@@ -70,39 +101,6 @@
 //!     }
 //! }
 //! ```
-//!
-//! ## `priv_sep` in action for Unix-like OSes
-//!
-//! ```no_run
-//! use core::convert::Infallible;
-//! use priv_sep::{PrivDropErr, UserInfo};
-//! use std::{
-//!     io::Error,
-//!     net::{Ipv6Addr, SocketAddrV6},
-//! };
-//! use tokio::net::TcpListener;
-//! #[tokio::main(flavor = "current_thread")]
-//! async fn main() -> Result<Infallible, PrivDropErr<Error>> {
-//!     // Get the user ID and group ID for nobody from `passwd(5)`.
-//!     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
-//!     // Bind to TCP `[::1]:443` as root.
-//!     // `setgroups(2)` to drop all supplementary groups.
-//!     // `setresgid(2)` to the group ID associated with nobody.
-//!     // `setresuid(2)` to the user ID associated with nobody.
-//!     let listener =
-//!         UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
-//!             TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
-//!         })
-//!         .await?;
-//!     // At this point, the process is running under nobody.
-//!     loop {
-//!         // Handle TCP connections.
-//!         if let Ok((_, ip)) = listener.accept().await {
-//!             assert!(ip.is_ipv6());
-//!         }
-//!     }
-//! }
-//! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![no_std]
 #![cfg(any(
@@ -134,7 +132,7 @@ use core::{
     mem::MaybeUninit,
     ptr,
 };
-pub use err::{Errno, OtherErrno};
+pub use err::Errno;
 #[cfg_attr(docsrs, doc(cfg(target_os = "openbsd")))]
 #[cfg(any(doc, target_os = "openbsd"))]
 pub use openbsd::{Permission, Permissions, Promise, Promises};

@@ -1,30 +1,17 @@
 use super::{Gid, Uid, UserInfo};
 use core::ffi::{c_char, c_int};
-/// Error code when a libc call is successful.
+/// Return value when a libc call is successful.
 pub(crate) const SUCCESS: c_int = 0;
 /// `time_t`.
-#[cfg(all(
-    any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ),
-    target_arch = "aarch64",
-    target_pointer_width = "32"
-))]
+#[cfg(all(target_arch = "x86", target_os = "freebsd"))]
 type TimeT = i32;
 /// `time_t`.
-#[cfg(all(
-    any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ),
-    not(all(target_arch = "aarch64", target_pointer_width = "32"))
+#[cfg(any(
+    all(not(target_arch = "x86"), target_os = "freebsd"),
+    target_os = "dragonfly",
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd"
 ))]
 type TimeT = i64;
 /// [`passwd`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/basedefs/pwd.h.html).

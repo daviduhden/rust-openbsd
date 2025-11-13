@@ -17,7 +17,40 @@ Note the only platforms that are currently supported are platforms that correspo
 * `netbsd`
 * `openbsd`
 
-## `priv_sep` in action for OpenBSD
+## `priv_sep` in action
+
+```rust
+use core::convert::Infallible;
+use priv_sep::{PrivDropErr, UserInfo};
+use std::{
+    io::Error,
+    net::{Ipv6Addr, SocketAddrV6},
+};
+use tokio::net::TcpListener;
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<Infallible, PrivDropErr<Error>> {
+    // Get the user ID and group ID for nobody from `passwd(5)`.
+    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
+    // Bind to TCP `[::1]:443` as root.
+    // `setgroups(2)` to drop all supplementary groups.
+    // `setresgid(2)` to the group ID associated with nobody.
+    // `setresuid(2)` to the user ID associated with nobody.
+    let listener =
+        UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
+            TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
+        })
+        .await?;
+    // At this point, the process is running under nobody.
+    loop {
+        // Handle TCP connections.
+        if let Ok((_, ip)) = listener.accept().await {
+            assert!(ip.is_ipv6());
+        }
+    }
+}
+```
+
+## `priv_sep` in action for OpenBSD incorporating `pledge(2)` and `unveil(2)`
 
 ```rust
 use core::{convert::Infallible, ffi::CStr};
@@ -74,39 +107,6 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 }
 ```
 
-## `priv_sep` in action for Unix-like OSes
-
-```rust
-use core::convert::Infallible;
-use priv_sep::{PrivDropErr, UserInfo};
-use std::{
-    io::Error,
-    net::{Ipv6Addr, SocketAddrV6},
-};
-use tokio::net::TcpListener;
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<Infallible, PrivDropErr<Error>> {
-    // Get the user ID and group ID for nobody from `passwd(5)`.
-    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
-    // Bind to TCP `[::1]:443` as root.
-    // `setgroups(2)` to drop all supplementary groups.
-    // `setresgid(2)` to the group ID associated with nobody.
-    // `setresuid(2)` to the user ID associated with nobody.
-    let listener =
-        UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
-            TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
-        })
-        .await?;
-    // At this point, the process is running under nobody.
-    loop {
-        // Handle TCP connections.
-        if let Ok((_, ip)) = listener.accept().await {
-            assert!(ip.is_ipv6());
-        }
-    }
-}
-```
-
 ## Minimum Supported Rust Version (MSRV)
 
 This will frequently be updated to be the same as stable. Specifically, any time stable is updated and that
@@ -134,13 +134,16 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
 as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-Before any PR is sent, `cargo clippy --all-targets` and `cargo t` should be run _for each possible combination of
-"features"_ using the stable and MSRV toolchains. One easy way to achieve this is by invoking
-[`ci-cargo`](https://crates.io/crates/ci-cargo) with the `--all-targets` option in the `priv_sep` directory.
-Additionally, one should test all `ignore` tests as both root and non-root. When run as root or on OpenBSD,
-`ignore` tests should be run separately. Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features`
-should be run to ensure documentation can be built on non-OpenBSD platforms; otherwise `cargo doc --all-features`
-should be run.
+Before any PR is sent, `cargo clippy --all-targets`, `cargo test --all-targets`, and `cargo test --doc` should be
+run _for each possible combination of "features"_ using the stable and MSRV toolchains. One easy way to achieve this
+is by invoking [`ci-cargo`](https://crates.io/crates/ci-cargo) as `ci-cargo clippy --all-targets test --all-targets`
+in the `priv_sep` directory.
+
+Additionally, one should test all `ignore` tests as both root and non-root for both toolchains. These tests should
+be run individually since they may interfere with each other.
+
+Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to ensure documentation can be
+built on non-OpenBSD platforms; otherwise `cargo doc --all-features` should be run.
 
 ### Status
 
