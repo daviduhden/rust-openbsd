@@ -555,7 +555,7 @@ pub enum Errno {
         docsrs,
         doc(cfg(any(target_arch = "powerpc", target_arch = "powerpc64")))
     )]
-    #[cfg(any(doc, target_arch = "powerpc", target_arch = "powerpc64"))]
+    #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
     EDEADLOCK,
     /// Bad font file format.
     EBFONT = 59,
@@ -1922,12 +1922,14 @@ impl Errno {
     pub const EAGAIN: Self = Self::EWOULDBLOCK;
     /// Operation not supported.
     #[cfg_attr(docsrs, doc(cfg(any(target_os = "dragonfly", target_os = "freebsd"))))]
-    #[cfg(any(doc, target_os = "dragonfly", target_os = "freebsd"))]
+    #[cfg(any(target_os = "dragonfly", target_os = "freebsd"))]
     pub const ENOTSUP: Self = Self::EOPNOTSUPP;
     /// Must be equal to largest `Errno`.
+    #[cfg_attr(docsrs, doc(cfg(target_os = "dragonfly")))]
     #[cfg(target_os = "dragonfly")]
     pub const LAST: Self = Self::EASYNC;
     /// Must be equal to largest `Errno`.
+    #[cfg_attr(docsrs, doc(cfg(target_os = "freebsd")))]
     #[cfg(target_os = "freebsd")]
     pub const LAST: Self = Self::EINTEGRITY;
     /// Resource deadlock would occur.
@@ -1947,30 +1949,30 @@ impl Errno {
             target_os = "linux"
         )))
     )]
-    #[cfg(any(
-        doc,
-        all(
-            not(any(
-                target_arch = "mips",
-                target_arch = "mips32r6",
-                target_arch = "mips64",
-                target_arch = "mips64r6",
-                target_arch = "powerpc",
-                target_arch = "powerpc64",
-                target_arch = "sparc",
-                target_arch = "sparc64",
-            )),
-            target_os = "linux"
-        )
+    #[cfg(all(
+        not(any(
+            target_arch = "mips",
+            target_arch = "mips32r6",
+            target_arch = "mips64",
+            target_arch = "mips64r6",
+            target_arch = "powerpc",
+            target_arch = "powerpc64",
+            target_arch = "sparc",
+            target_arch = "sparc64",
+        )),
+        target_os = "linux"
     ))]
     pub const EDEADLOCK: Self = Self::EDEADLK;
     /// Must be equal to largest `Errno`.
+    #[cfg_attr(docsrs, doc(cfg(target_os = "macos")))]
     #[cfg(target_os = "macos")]
     pub const LAST: Self = Self::ENOTCAPABLE;
     /// Must be equal to largest `Errno`.
+    #[cfg_attr(docsrs, doc(cfg(target_os = "netbsd")))]
     #[cfg(target_os = "netbsd")]
     pub const LAST: Self = Self::ENOTRECOVERABLE;
     /// Must be equal to largest `Errno`.
+    #[cfg_attr(docsrs, doc(cfg(target_os = "openbsd")))]
     #[cfg(target_os = "openbsd")]
     pub const LAST: Self = Self::EPROTO;
     /// Returns a `Self` equivalent to `code`.

@@ -5,10 +5,8 @@ Privilege separation library for Unix-likes OSes
 [<img alt="crates.io" src="https://img.shields.io/crates/v/priv_sep.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/priv_sep)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-priv_sep-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/priv_sep/latest/priv_sep/)
 
-`priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction.
-
-Note the only platforms that are currently supported are platforms that correspond to the following
-`target_os` values:
+`priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction
+for Unix-like platforms. The following `target_os` values are supported:
 
 * `dragonfly`
 * `freebsd`
@@ -50,7 +48,8 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 }
 ```
 
-## `priv_sep` in action for OpenBSD incorporating `pledge(2)` and `unveil(2)`
+<details>
+<summary>Incorporating <a href="https://man.openbsd.org/pledge.2"><code>pledge(2)</code></a> and <a href="https://man.openbsd.org/unveil.2"><code>unveil(2)</code></a> on OpenBSD</summary>
 
 ```rust
 use core::{convert::Infallible, ffi::CStr};
@@ -106,6 +105,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     }
 }
 ```
+</details>
 
 ## Minimum Supported Rust Version (MSRV)
 
@@ -142,8 +142,8 @@ in the `priv_sep` directory.
 Additionally, one should test all `ignore` tests as both root and non-root for both toolchains. These tests should
 be run individually since they may interfere with each other.
 
-Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features` should be run to ensure documentation can be
-built on non-OpenBSD platforms; otherwise `cargo doc --all-features` should be run.
+Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features -Zbuild-std=std` should be run to ensure
+documentation can be built.
 
 ### Status
 

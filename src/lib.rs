@@ -5,7 +5,14 @@
 //! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
 //!
 //! `priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction
-//! for Unix-like platforms.
+//! for Unix-like platforms. The following `target_os` values are supported:
+//!
+//! * `dragonfly`
+//! * `freebsd`
+//! * `linux`
+//! * `macos`
+//! * `netbsd`
+//! * `openbsd`
 //!
 //! ## `priv_sep` in action
 //!
@@ -40,18 +47,21 @@
 //! }
 //! ```
 //!
-//! ## `priv_sep` in action for OpenBSD incorporating `pledge(2)` and `unveil(2)`
+//! <details>
+//! <summary>Incorporating <a href="https://man.openbsd.org/pledge.2"><code>pledge(2)</code></a> and <a href="https://man.openbsd.org/unveil.2"><code>unveil(2)</code></a> on OpenBSD</summary>
 //!
 //! ```no_run
 //! # #[cfg(target_os = "openbsd")]
 //! use core::{convert::Infallible, ffi::CStr};
 //! # #[cfg(target_os = "openbsd")]
 //! use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
+//! # #[cfg(target_os = "openbsd")]
 //! use std::{
 //!     fs,
 //!     io::Error,
 //!     net::{Ipv6Addr, SocketAddrV6},
 //! };
+//! # #[cfg(target_os = "openbsd")]
 //! use tokio::net::TcpListener;
 //! # #[cfg(not(target_os = "openbsd"))]
 //! # fn main() {}
@@ -101,7 +111,9 @@
 //!     }
 //! }
 //! ```
+//! </details>
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg = false))]
 #![no_std]
 #![cfg(any(
     target_os = "dragonfly",
@@ -122,7 +134,7 @@ mod c;
 /// Errno.
 mod err;
 /// OpenBSD
-#[cfg(any(doc, target_os = "openbsd"))]
+#[cfg(target_os = "openbsd")]
 mod openbsd;
 use c::SUCCESS;
 use core::{
@@ -134,7 +146,7 @@ use core::{
 };
 pub use err::Errno;
 #[cfg_attr(docsrs, doc(cfg(target_os = "openbsd")))]
-#[cfg(any(doc, target_os = "openbsd"))]
+#[cfg(target_os = "openbsd")]
 pub use openbsd::{Permission, Permissions, Promise, Promises};
 /// [`uid_t`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/basedefs/sys_types.h.html).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -909,27 +921,10 @@ impl PartialEq<UserInfo> for &UserInfo {
 /// # Examples
 ///
 /// ```no_run
-/// # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
 /// assert!(priv_sep::setgroups(&[]).is_ok());
 /// ```
-#[cfg_attr(
-    docsrs,
-    doc(cfg(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "linux",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))
-)]
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    all(doc, target_os = "macos")
-))]
+#[cfg_attr(docsrs, doc(cfg(not(target_os = "macos"))))]
+#[cfg(not(target_os = "macos"))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
 pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
@@ -966,27 +961,10 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
 /// assert!(priv_sep::drop_supplementary_groups().is_ok());
 /// ```
-#[cfg_attr(
-    docsrs,
-    doc(cfg(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "linux",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))
-)]
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    all(doc, target_os = "macos")
-))]
+#[cfg_attr(docsrs, doc(cfg(not(target_os = "macos"))))]
+#[cfg(not(target_os = "macos"))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
 pub fn drop_supplementary_groups() -> Result<(), Errno> {

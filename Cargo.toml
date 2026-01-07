@@ -91,7 +91,8 @@ semicolon_inside_block = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
-default-target = "x86_64-unknown-linux-gnu"
+cargo-args = ["-Zbuild-std=std"]
+default-target = "x86_64-unknown-openbsd"
 targets = [
   "aarch64-apple-darwin",
   "aarch64-unknown-linux-gnu",
@@ -100,12 +101,13 @@ targets = [
   "powerpc64-unknown-linux-gnu",
   "riscv64gc-unknown-linux-gnu",
   "x86_64-unknown-freebsd",
+  "x86_64-unknown-linux-gnu",
   "x86_64-unknown-linux-musl",
   "x86_64-unknown-netbsd"
 ]
 
 [dev-dependencies]
-tokio = { version = "1.48.0", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.49.0", default-features = false, features = ["macros", "net", "rt"] }
 
 
 ### FEATURES #################################################################
