@@ -1,6 +1,6 @@
 #[cfg(doc)]
 use super::chroot_then_chdir;
-use super::{Errno, PrivDropErr, SUCCESS, UserInfo};
+use super::{CStrHelper, Errno, PrivDropErr, SUCCESS, UserInfo};
 use core::{
     ffi::{CStr, c_char, c_int},
     fmt::{self, Display, Formatter},
@@ -288,8 +288,14 @@ impl Promises {
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn new_priv_drop<Prom: AsRef<[Promise]>, T, E, F: FnOnce() -> Result<T, E>>(
-        name: &CStr,
+    pub fn new_priv_drop<
+        C: CStrHelper,
+        Prom: AsRef<[Promise]>,
+        T,
+        E,
+        F: FnOnce() -> Result<T, E>,
+    >(
+        name: C,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -344,12 +350,13 @@ impl Promises {
     /// ```
     #[inline]
     pub async fn new_priv_drop_async<
+        C: CStrHelper,
         Prom: AsRef<[Promise]>,
         T,
         E,
         F: AsyncFnOnce() -> Result<T, E>,
     >(
-        name: &CStr,
+        name: C,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -407,9 +414,16 @@ impl Promises {
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn new_chroot_then_priv_drop<Prom: AsRef<[Promise]>, T, E, F: FnOnce() -> Result<T, E>>(
-        name: &CStr,
-        path: &CStr,
+    pub fn new_chroot_then_priv_drop<
+        N: CStrHelper,
+        P: CStrHelper,
+        Prom: AsRef<[Promise]>,
+        T,
+        E,
+        F: FnOnce() -> Result<T, E>,
+    >(
+        name: N,
+        path: P,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -470,13 +484,15 @@ impl Promises {
     /// ```
     #[inline]
     pub async fn new_chroot_then_priv_drop_async<
+        N: CStrHelper,
+        P: CStrHelper,
         Prom: AsRef<[Promise]>,
         T,
         E,
         F: AsyncFnOnce() -> Result<T, E>,
     >(
-        name: &CStr,
-        path: &CStr,
+        name: N,
+        path: P,
         initial: Prom,
         retain_id_promise: bool,
         f: F,
@@ -1248,7 +1264,7 @@ impl Permissions {
     /// ));
     /// ```
     #[inline]
-    pub fn unveil(self, path: &CStr) -> Result<(), Errno> {
+    pub fn unveil<P: CStrHelper>(self, path: P) -> Result<(), Errno> {
         let perms = if self.is_enabled(Permission::Create) {
             if self.is_enabled(Permission::Execute) {
                 if self.is_enabled(Permission::Read) {
@@ -1296,7 +1312,7 @@ impl Permissions {
         } else {
             c""
         };
-        Self::inner_unveil(path.as_ptr(), perms.as_ptr())
+        path.convert_then_apply(|p| Self::inner_unveil(p.as_ptr(), perms.as_ptr()))
     }
     /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2) by passing `NULL` for both `path` and
     /// `permissions`.
@@ -1341,9 +1357,8 @@ impl Permissions {
     /// ));
     /// ```
     #[inline]
-    pub fn unveil_raw(path: &CStr, permissions: &CStr) -> Result<(), Errno> {
-        // `NULL` is valid for both `path` and `permissions`.
-        Self::inner_unveil(path.as_ptr(), permissions.as_ptr())
+    pub fn unveil_raw<P: CStrHelper>(path: P, permissions: &CStr) -> Result<(), Errno> {
+        path.convert_then_apply(|p| Self::inner_unveil(p.as_ptr(), permissions.as_ptr()))
     }
 }
 impl Display for Permissions {

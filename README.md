@@ -52,7 +52,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 <summary>Incorporating <a href="https://man.openbsd.org/pledge.2"><code>pledge(2)</code></a> and <a href="https://man.openbsd.org/unveil.2"><code>unveil(2)</code></a> on OpenBSD</summary>
 
 ```rust
-use core::{convert::Infallible, ffi::CStr};
+use core::convert::Infallible;
 use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
 use std::{
     fs,
@@ -63,12 +63,7 @@ use tokio::net::TcpListener;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     /// Config file.
-    const CONFIG: &CStr = c"config";
-    /// Config file.
-    const CONFIG_STR: &str = match CONFIG.to_str() {
-        Ok(val) => val,
-        Err(_) => panic!("config is not a valid str"),
-    };
+    const CONFIG: &str = "config";
     // Get the user ID and group ID for nobody from `passwd(5)`.
     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
     // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
@@ -91,7 +86,7 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
     // Read `config`.
     // This will of course fail if the file does not exist or nobody does not
     // have read permissions.
-    let config = fs::read(CONFIG_STR).map_err(PrivDropErr::Other)?;
+    let config = fs::read(CONFIG).map_err(PrivDropErr::Other)?;
     // Remove file system access.
     Permissions::NONE.unveil(CONFIG)?;
     // Remove `rpath` and `unveil` from our `pledge(2)`d promises

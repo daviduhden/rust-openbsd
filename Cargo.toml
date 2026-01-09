@@ -86,6 +86,7 @@ question_mark_used = "allow"
 redundant_pub_crate = "allow"
 ref_patterns = "allow"
 return_and_then = "allow"
+single_call_fn = "allow"
 single_char_lifetime_names = "allow"
 semicolon_inside_block = "allow"
 
@@ -115,5 +116,8 @@ tokio = { version = "1.49.0", default-features = false, features = ["macros", "n
 [features]
 default = ["std"]
 
+# Provide alloc support.
+alloc = []
+
 # Provide std support.
-std = []
+std = ["alloc"]

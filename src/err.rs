@@ -555,7 +555,7 @@ pub enum Errno {
         docsrs,
         doc(cfg(any(target_arch = "powerpc", target_arch = "powerpc64")))
     )]
-    #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
+    #[cfg(any(doc, target_arch = "powerpc", target_arch = "powerpc64"))]
     EDEADLOCK,
     /// Bad font file format.
     EBFONT = 59,

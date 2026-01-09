@@ -52,7 +52,7 @@
 //!
 //! ```no_run
 //! # #[cfg(target_os = "openbsd")]
-//! use core::{convert::Infallible, ffi::CStr};
+//! use core::convert::Infallible;
 //! # #[cfg(target_os = "openbsd")]
 //! use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
 //! # #[cfg(target_os = "openbsd")]
@@ -69,12 +69,7 @@
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 //!     /// Config file.
-//!     const CONFIG: &CStr = c"config";
-//!     /// Config file.
-//!     const CONFIG_STR: &str = match CONFIG.to_str() {
-//!         Ok(val) => val,
-//!         Err(_) => panic!("config is not a valid str"),
-//!     };
+//!     const CONFIG: &str = "config";
 //!     // Get the user ID and group ID for nobody from `passwd(5)`.
 //!     // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
 //!     // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
@@ -97,7 +92,7 @@
 //!     // Read `config`.
 //!     // This will of course fail if the file does not exist or nobody does not
 //!     // have read permissions.
-//!     let config = fs::read(CONFIG_STR).map_err(PrivDropErr::Other)?;
+//!     let config = fs::read(CONFIG).map_err(PrivDropErr::Other)?;
 //!     // Remove file system access.
 //!     Permissions::NONE.unveil(CONFIG)?;
 //!     // Remove `rpath` and `unveil` from our `pledge(2)`d promises
@@ -127,6 +122,8 @@
     clippy::pub_use,
     reason = "don't want Errno nor openbsd types in a module"
 )]
+#[cfg(feature = "alloc")]
+extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 /// C FFI.
@@ -134,20 +131,29 @@ mod c;
 /// Errno.
 mod err;
 /// OpenBSD
-#[cfg(target_os = "openbsd")]
+#[cfg(any(doc, target_os = "openbsd"))]
 mod openbsd;
+#[cfg(feature = "std")]
+use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+use alloc::{ffi::CString, string::String, vec};
 use c::SUCCESS;
 use core::{
     error::Error as CoreErr,
     ffi::{CStr, c_char, c_int},
     fmt::{self, Display, Formatter},
     mem::MaybeUninit,
-    ptr,
+    ptr, slice,
 };
 pub use err::Errno;
 #[cfg_attr(docsrs, doc(cfg(target_os = "openbsd")))]
-#[cfg(target_os = "openbsd")]
+#[cfg(any(doc, target_os = "openbsd"))]
 pub use openbsd::{Permission, Permissions, Promise, Promises};
+#[cfg(feature = "std")]
+use std::{
+    ffi::{OsStr, OsString},
+    path::{Component, Components, Iter, Path, PathBuf},
+};
 /// [`uid_t`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/basedefs/sys_types.h.html).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
@@ -351,6 +357,212 @@ impl From<u32> for Gid {
         Self(value)
     }
 }
+/// Primarily an internal `trait` that allows one to use other types in lieu of
+/// [`CStr`](https://doc.rust-lang.org/stable/core/ffi/struct.CStr.html).
+pub trait CStrHelper {
+    /// First converts `self` into a `CStr` before passing it into `f`.
+    ///
+    /// # Errors
+    ///
+    /// Errors whenever necessary.
+    ///
+    /// If an error occurs due to insufficient buffer space (e.g., when the `alloc` feature is not enabled and
+    /// a `str` is used with length greater than 1023), then [`Errno::ERANGE`] must be returned.
+    ///
+    /// If an error occurs from converting `self` into a `CStr` due to nul bytes, then [`Errno::EINVAL`] must be
+    /// returned.
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(&self, f: F)
+    -> Result<T, Errno>;
+}
+impl CStrHelper for CStr {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&Self) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        f(self)
+    }
+}
+/// Converts `val` into a `CStr` via heap allocation before applying `f` to it.
+#[cold]
+#[inline(never)]
+#[cfg(feature = "alloc")]
+fn c_str_allocating<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+    bytes: &[u8],
+    f: F,
+) -> Result<T, Errno> {
+    CString::new(bytes)
+        .map_err(|_e| Errno::EINVAL)
+        .and_then(|c| f(&c))
+}
+impl CStrHelper for [u8] {
+    #[expect(unsafe_code, reason = "comments justify correctness")]
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "comment justifies correctness"
+    )]
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        /// Maximum stack allocation for `CStr` conversion.
+        const C_STR_MAX_STACK_ALLOCATION: usize = 1024;
+        let len = self.len();
+        if len < C_STR_MAX_STACK_ALLOCATION {
+            let mut buf = MaybeUninit::<[u8; C_STR_MAX_STACK_ALLOCATION]>::uninit();
+            let buf_ptr = buf.as_mut_ptr().cast();
+            let slice_ptr = self.as_ptr();
+            // SAFETY:
+            // `slice_ptr` was created from `self` which has length `len` thus is valid for `len` bytes.
+            // `buf_ptr` was created from `buf` which has length `C_STR_MAX_STACK_ALLOCATION > len`; thus
+            // it too is valid for `len` bytes.
+            // `buf`, while unitialized, is only written to before ever being read from.
+            // `slice_ptr` and `buf_ptr` are properly aligned.
+            // `slice_ptr` and `buf_ptr` point to completely separate allocations.
+            unsafe { ptr::copy_nonoverlapping(slice_ptr, buf_ptr, len) };
+            // SAFETY:
+            // We just wrote `len` bytes into `buf` (which `buf_ptr` points to).
+            let nul_pos = unsafe { buf_ptr.add(len) };
+            // SAFETY:
+            // `buf.len() > len`; thus we know we have at least one byte of space to write `0` to.
+            unsafe { nul_pos.write(0) };
+            // `len <= isize::MAX`; thus this cannot overflow `usize::MAX`.
+            let final_len = len + 1;
+            // SAFETY:
+            // The first `final_len` bytes of `buf` (which `buf_ptr` points to) is initialized, aligned, valid, and
+            // not null.
+            // `CStr::from_bytes_with_nul` doesn't mutate `raw_slice`.
+            let raw_slice = unsafe { slice::from_raw_parts(buf_ptr, final_len) };
+            CStr::from_bytes_with_nul(raw_slice)
+                .map_err(|_e| Errno::EINVAL)
+                .and_then(f)
+        } else {
+            #[cfg(not(feature = "alloc"))]
+            let res = Err(Errno::ERANGE);
+            #[cfg(feature = "alloc")]
+            let res = c_str_allocating(self, f);
+            res
+        }
+    }
+}
+impl CStrHelper for str {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_bytes().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[cfg(feature = "alloc")]
+impl CStrHelper for String {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_str().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for OsStr {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_encoded_bytes().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for OsString {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_os_str().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for Cow<'_, OsStr> {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        (**self).convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for Path {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_os_str().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for PathBuf {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_os_str().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for Component<'_> {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_os_str().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for Components<'_> {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_path().convert_then_apply(f)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "std")]
+impl CStrHelper for Iter<'_> {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_path().convert_then_apply(f)
+    }
+}
+impl<C: CStrHelper + ?Sized> CStrHelper for &C {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        (**self).convert_then_apply(f)
+    }
+}
 /// [`chroot(2)`](https://manned.org/chroot.2).
 ///
 /// # Errors
@@ -364,15 +576,18 @@ impl From<u32> for Gid {
 /// ```
 #[expect(unsafe_code, reason = "chroot(2) takes a pointer")]
 #[inline]
-pub fn chroot(path: &CStr) -> Result<(), Errno> {
-    let ptr = path.as_ptr();
-    // SAFETY:
-    // `ptr` is valid and not null.
-    if unsafe { c::chroot(ptr) } == SUCCESS {
-        Ok(())
-    } else {
-        Err(Errno::last())
+pub fn chroot<P: CStrHelper>(path: P) -> Result<(), Errno> {
+    fn f(path: &CStr) -> Result<(), Errno> {
+        let ptr = path.as_ptr();
+        // SAFETY:
+        // `ptr` is valid and not null.
+        if unsafe { c::chroot(ptr) } == SUCCESS {
+            Ok(())
+        } else {
+            Err(Errno::last())
+        }
     }
+    path.convert_then_apply(f)
 }
 /// [`chdir`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/chdir.html).
 ///
@@ -400,8 +615,11 @@ fn private_chdir(path: *const c_char) -> Result<(), Errno> {
 /// assert!(priv_sep::chdir(c"/").is_ok());
 /// ```
 #[inline]
-pub fn chdir(path: &CStr) -> Result<(), Errno> {
-    private_chdir(path.as_ptr())
+pub fn chdir<P: CStrHelper>(path: P) -> Result<(), Errno> {
+    fn f(path: &CStr) -> Result<(), Errno> {
+        private_chdir(path.as_ptr())
+    }
+    path.convert_then_apply(f)
 }
 /// Calls [`chroot`] on `path` followed by a call to [`chdir`] on `"/"`.
 ///
@@ -415,7 +633,7 @@ pub fn chdir(path: &CStr) -> Result<(), Errno> {
 /// assert!(priv_sep::chroot_then_chdir(c"./").is_ok());
 /// ```
 #[inline]
-pub fn chroot_then_chdir(path: &CStr) -> Result<(), Errno> {
+pub fn chroot_then_chdir<P: CStrHelper>(path: P) -> Result<(), Errno> {
     /// Root directory.
     const ROOT: *const c_char = c"/".as_ptr();
     chroot(path).and_then(|()| private_chdir(ROOT))
@@ -547,8 +765,6 @@ pub struct UserInfo {
     pub gid: Gid,
 }
 impl UserInfo {
-    /// The buffer size we use to read a `passwd` entry.
-    const PW_ENT_BUF_LEN: usize = 1024;
     /// Returns `true` iff [`Uid::is_root`].
     ///
     /// # Examples
@@ -562,7 +778,7 @@ impl UserInfo {
     pub const fn is_root(self) -> bool {
         self.uid.is_root()
     }
-    /// Helper for [`Self::with_buffer`], [`Self::new`], and [`Self::setresid_if_exists`].
+    /// Helper for [`Self::new`] and [`Self::setresid_if_valid`].
     #[expect(
         unsafe_code,
         reason = "getpwnam_r(3) and getpwuid_r(3) take in pointers"
@@ -602,32 +818,20 @@ impl UserInfo {
     }
     /// [`getpwnam_r`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/getpwnam_r.html).
     ///
-    /// Uses `buffer` to write the user database entry into returning `None` iff there is no entry; otherwise
-    /// returns `Self`.
+    /// Obtains the user database entry returning `None` iff there is no entry; otherwise returns `Self`.
     ///
-    /// Note it is the caller's responsibility to ensure `buffer` is large enough; otherwise an [`Errno`] will
-    /// be returned.
+    /// A 1024-byte stack-allocated buffer is used to write the database entry into. If [`Errno::ERANGE`]
+    /// is returned, then the following will occur:
+    ///
+    /// * If `alloc` is not enabled, then the error is returned.
+    /// * If `alloc` is enabled and a 16-bit architecture is used, then a heap-allocated buffer of 16 KiB
+    ///   is used. If this errors, then the error is returned.
+    /// * If `alloc` is enabled and a non-16-bit architecture is used, then a heap-allocated buffer of 1 MiB
+    ///   is used. If this errors, then the error is returned.
     ///
     /// # Errors
     ///
     /// Errors iff `getpwnam_r` does.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use priv_sep::{Uid, UserInfo};
-    /// assert!(UserInfo::with_buffer(c"root", [0; 128].as_mut_slice())?.map_or(false, |info| info.is_root()));
-    /// # Ok::<_, priv_sep::Errno>(())
-    /// ```
-    #[inline]
-    pub fn with_buffer(name: &CStr, buffer: &mut [c_char]) -> Result<Option<Self>, Errno> {
-        Self::getpw_entry(CStrWrapper(name), buffer)
-    }
-    /// Same as [`Self::with_buffer`] except a stack-allocated buffer of 1024 bytes is used.
-    ///
-    /// # Errors
-    ///
-    /// Errors iff [`Self::with_buffer`] does for a 1024-byte buffer.
     ///
     /// # Examples
     ///
@@ -637,8 +841,31 @@ impl UserInfo {
     /// # Ok::<_, priv_sep::Errno>(())
     /// ```
     #[inline]
-    pub fn new(name: &CStr) -> Result<Option<Self>, Errno> {
-        Self::with_buffer(name, &mut [0; Self::PW_ENT_BUF_LEN])
+    pub fn new<C: CStrHelper>(name: C) -> Result<Option<Self>, Errno> {
+        fn f(name: &CStr) -> Result<Option<UserInfo>, Errno> {
+            let wrapper = CStrWrapper(name);
+            let res = UserInfo::getpw_entry(wrapper, &mut [0; 0x400]);
+            #[cfg(not(feature = "alloc"))]
+            let res_final = res;
+            #[cfg(all(target_pointer_width = "16", feature = "alloc"))]
+            let res_final = res.or_else(|e| {
+                if matches!(e, Errno::ERANGE) {
+                    Self::getpw_entry(wrapper, vec![0; 0x4000].as_mut_slice())
+                } else {
+                    Err(e)
+                }
+            });
+            #[cfg(all(not(target_pointer_width = "16"), feature = "alloc"))]
+            let res_final = res.or_else(|e| {
+                if matches!(e, Errno::ERANGE) {
+                    UserInfo::getpw_entry(wrapper, vec![0; 0x10_0000].as_mut_slice())
+                } else {
+                    Err(e)
+                }
+            });
+            res_final
+        }
+        name.convert_then_apply(f)
     }
     /// Calls [`Gid::setresgid`] and [`Uid::setresuid`].
     ///
@@ -663,14 +890,14 @@ impl UserInfo {
     /// [`getpwuid_r`](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/getpwuid_r.html)
     /// is used to first confirm the existence of [`Self::uid`] and [`Self::gid`].
     ///
-    /// Note this should rarely be used since most will rely on [`Self::new`], [`Self::with_buffer`],
-    /// [`Self::priv_drop`], or [`Self::chroot_then_priv_drop`].
+    /// Note this should rarely be used since most will rely on [`Self::new`], [`Self::priv_drop`], or
+    /// [`Self::chroot_then_priv_drop`].
     ///
-    /// Like [`Self::new`], this will fail if the buffer needed exceeds 16 KiB.
+    /// Read [`Self::new`] more information on the buffering strategy.
     ///
     /// # Errors
     ///
-    /// Errors iff `getpwuid_r` errors for a 16 KiB buffer, [`Self::uid`] and [`Self::gid`] don't exist in the user
+    /// Errors iff `getpwuid_r` errors, [`Self::uid`] and [`Self::gid`] don't exist in the user
     /// database, [`Gid::setresgid`] errors, or [`Uid::setresuid`] errors.
     ///
     /// # Examples
@@ -682,17 +909,34 @@ impl UserInfo {
     /// ```
     #[inline]
     pub fn setresid_if_valid(self) -> Result<(), SetresidErr> {
-        Self::getpw_entry(self.uid, &mut [0; Self::PW_ENT_BUF_LEN])
-            .map_err(SetresidErr::Libc)
-            .and_then(|opt| {
-                opt.ok_or(SetresidErr::NoPasswdEntry).and_then(|info| {
-                    if info.gid == self.gid {
-                        self.setresid().map_err(SetresidErr::Libc)
-                    } else {
-                        Err(SetresidErr::GidMismatch)
-                    }
-                })
+        let res = Self::getpw_entry(self.uid, &mut [0; 0x400]);
+        #[cfg(not(feature = "alloc"))]
+        let res_final = res;
+        #[cfg(all(target_pointer_width = "16", feature = "alloc"))]
+        let res_final = res.or_else(|e| {
+            if matches!(e, Errno::ERANGE) {
+                Self::getpw_entry(self.uid, vec![0; 0x4000].as_mut_slice())
+            } else {
+                Err(e)
+            }
+        });
+        #[cfg(all(not(target_pointer_width = "16"), feature = "alloc"))]
+        let res_final = res.or_else(|e| {
+            if matches!(e, Errno::ERANGE) {
+                Self::getpw_entry(self.uid, vec![0; 0x10_0000].as_mut_slice())
+            } else {
+                Err(e)
+            }
+        });
+        res_final.map_err(SetresidErr::Libc).and_then(|opt| {
+            opt.ok_or(SetresidErr::NoPasswdEntry).and_then(|info| {
+                if info.gid == self.gid {
+                    self.setresid().map_err(SetresidErr::Libc)
+                } else {
+                    Err(SetresidErr::GidMismatch)
+                }
             })
+        })
     }
     /// Helper to unify targets that don't support `setgroups(2)`.
     ///
@@ -743,8 +987,8 @@ impl UserInfo {
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn priv_drop<T, E, F: FnOnce() -> Result<T, E>>(
-        name: &CStr,
+    pub fn priv_drop<C: CStrHelper, T, E, F: FnOnce() -> Result<T, E>>(
+        name: C,
         f: F,
     ) -> Result<T, PrivDropErr<E>> {
         Self::new(name).map_err(PrivDropErr::Libc).and_then(|opt| {
@@ -779,8 +1023,8 @@ impl UserInfo {
     /// });
     /// ```
     #[inline]
-    pub async fn priv_drop_async<T, E, F: AsyncFnOnce() -> Result<T, E>>(
-        name: &CStr,
+    pub async fn priv_drop_async<C: CStrHelper, T, E, F: AsyncFnOnce() -> Result<T, E>>(
+        name: C,
         f: F,
     ) -> Result<T, PrivDropErr<E>> {
         match Self::new(name) {
@@ -820,9 +1064,15 @@ impl UserInfo {
     /// # Ok::<_, PrivDropErr<Error>>(())
     /// ```
     #[inline]
-    pub fn chroot_then_priv_drop<T, E, F: FnOnce() -> Result<T, E>>(
-        name: &CStr,
-        path: &CStr,
+    pub fn chroot_then_priv_drop<
+        N: CStrHelper,
+        P: CStrHelper,
+        T,
+        E,
+        F: FnOnce() -> Result<T, E>,
+    >(
+        name: N,
+        path: P,
         chroot_after_f: bool,
         f: F,
     ) -> Result<T, PrivDropErr<E>> {
@@ -867,9 +1117,15 @@ impl UserInfo {
     /// });
     /// ```
     #[inline]
-    pub async fn chroot_then_priv_drop_async<T, E, F: AsyncFnOnce() -> Result<T, E>>(
-        name: &CStr,
-        path: &CStr,
+    pub async fn chroot_then_priv_drop_async<
+        N: CStrHelper,
+        P: CStrHelper,
+        T,
+        E,
+        F: AsyncFnOnce() -> Result<T, E>,
+    >(
+        name: N,
+        path: P,
         chroot_after_f: bool,
         f: F,
     ) -> Result<T, PrivDropErr<E>> {
@@ -924,7 +1180,7 @@ impl PartialEq<UserInfo> for &UserInfo {
 /// assert!(priv_sep::setgroups(&[]).is_ok());
 /// ```
 #[cfg_attr(docsrs, doc(cfg(not(target_os = "macos"))))]
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(doc, not(target_os = "macos")))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
 pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
@@ -964,7 +1220,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
 /// assert!(priv_sep::drop_supplementary_groups().is_ok());
 /// ```
 #[cfg_attr(docsrs, doc(cfg(not(target_os = "macos"))))]
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(doc, not(target_os = "macos")))]
 #[expect(unsafe_code, reason = "setgroups(2) takes a pointer")]
 #[inline]
 pub fn drop_supplementary_groups() -> Result<(), Errno> {
@@ -990,7 +1246,7 @@ pub fn drop_supplementary_groups() -> Result<(), Errno> {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "std")]
-    use super::{CStr, PrivDropErr};
+    use super::PrivDropErr;
     use super::{Errno, Gid, SetresidErr, Uid, UserInfo};
     #[cfg(all(feature = "std", target_os = "openbsd"))]
     use super::{Permissions, Promise, Promises};
@@ -1010,12 +1266,7 @@ mod tests {
     };
     use tokio as _;
     #[cfg(feature = "std")]
-    const README: &CStr = c"README.md";
-    #[cfg(feature = "std")]
-    const README_STR: &str = match README.to_str() {
-        Ok(val) => val,
-        Err(_) => panic!("not possible"),
-    };
+    const README: &str = "README.md";
     #[test]
     fn getuid() {
         _ = Uid::getuid();
@@ -1051,16 +1302,6 @@ mod tests {
         );
     }
     #[test]
-    fn user_info_with_buffer() {
-        assert_eq!(
-            UserInfo::with_buffer(c"root", [0; 512].as_mut_slice()),
-            Ok(Some(UserInfo {
-                uid: Uid::ROOT,
-                gid: Gid(0),
-            }))
-        );
-    }
-    #[test]
     fn user_info_setresid() -> Result<(), Errno> {
         UserInfo {
             uid: Uid::geteuid(),
@@ -1069,7 +1310,7 @@ mod tests {
         .setresid()
     }
     #[test]
-    fn user_info_setresid_if_exists() -> Result<(), SetresidErr> {
+    fn user_info_setresid_if_valid() -> Result<(), SetresidErr> {
         UserInfo {
             uid: Uid::geteuid(),
             gid: Gid::getegid(),
@@ -1077,7 +1318,7 @@ mod tests {
         .setresid_if_valid()
     }
     #[test]
-    fn user_info_setresid_if_exists_failure() {
+    fn user_info_setresid_if_valid_failure() {
         assert_eq!(
             UserInfo {
                 uid: Uid::geteuid(),
@@ -1121,7 +1362,7 @@ mod tests {
                     TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 987, 0, 0))
                 })
                 .is_ok_and(|_| {
-                    fs::exists(README_STR).is_ok_and(|exists| {
+                    fs::exists(README).is_ok_and(|exists| {
                         exists
                             && TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 82, 0, 0))
                                 .map_or_else(
@@ -1145,30 +1386,20 @@ mod tests {
     #[test]
     #[ignore = "interferes with other tests"]
     fn unveil_pledge() {
-        const FILE_EXISTS: &CStr = c"/home/zack/foo.txt";
-        const FILE_EXISTS_STR: &str = match FILE_EXISTS.to_str() {
-            Ok(val) => val,
-            Err(_) => panic!("not possible"),
-        };
-        const FILE_NOT_EXISTS: &CStr = c"/home/zack/aadkjfasj3s23";
-        const FILE_NOT_EXISTS_STR: &str = match FILE_NOT_EXISTS.to_str() {
-            Ok(val) => val,
-            Err(_) => panic!("not possible"),
-        };
-        const DIR_NOT_EXISTS: &CStr = c"/home/zack/aadkjfasj3s23/";
-        const DIR_NOT_EXISTS_STR: &str = match DIR_NOT_EXISTS.to_str() {
-            Ok(val) => val,
-            Err(_) => panic!("not possible"),
-        };
-        _ = fs::metadata(FILE_EXISTS_STR).unwrap_or_else(|_e| {
-            panic!("{FILE_EXISTS_STR} does not exist, so unit testing cannot occur")
+        const FILE_EXISTS: &str = "/home/zack/foo.txt";
+        const FILE_NOT_EXISTS: &str = "/home/zack/aadkjfasj3s23";
+        const DIR_NOT_EXISTS: &str = "/home/zack/aadkjfasj3s23/";
+        _ = fs::metadata(FILE_EXISTS).unwrap_or_else(|_e| {
+            panic!("{FILE_EXISTS} does not exist, so unit testing cannot occur")
         });
-        drop(fs::metadata(FILE_NOT_EXISTS_STR).expect_err(
-            format!("{FILE_NOT_EXISTS_STR} exists, so unit testing cannot occur").as_str(),
+        drop(fs::metadata(FILE_NOT_EXISTS).expect_err(
+            format!("{FILE_NOT_EXISTS} exists, so unit testing cannot occur").as_str(),
         ));
-        drop(fs::metadata(DIR_NOT_EXISTS_STR).expect_err(
-            format!("{DIR_NOT_EXISTS_STR} exists, so unit testing cannot occur").as_str(),
-        ));
+        drop(
+            fs::metadata(DIR_NOT_EXISTS).expect_err(
+                format!("{DIR_NOT_EXISTS} exists, so unit testing cannot occur").as_str(),
+            ),
+        );
         // This tests that a NULL `promise` does nothing.
         assert_eq!(Promises::pledge_none(), Ok(()));
         assert!(writeln!(io::stdout()).is_ok_and(|()| true));
@@ -1201,14 +1432,14 @@ mod tests {
         assert_eq!(initial_promises.pledge(), Ok(()));
         // This tests unveil with no permissions.
         assert_eq!(Permissions::NONE.unveil(FILE_EXISTS), Ok(()));
-        assert!(fs::metadata(FILE_EXISTS_STR).map_or_else(
+        assert!(fs::metadata(FILE_EXISTS).map_or_else(
             |e| matches!(e.kind(), ErrorKind::PermissionDenied),
             |_| false
         ));
         // This tests unveil with read permissions,
         // and one can unveil more permissions (unlike pledge which can only remove promises).
         assert_eq!(Permissions::READ.unveil(FILE_EXISTS), Ok(()));
-        assert!(fs::metadata(FILE_EXISTS_STR).is_ok_and(|_| true));
+        assert!(fs::metadata(FILE_EXISTS).is_ok_and(|_| true));
         // This tests that calls to unveil on missing files don't error.
         assert_eq!(Permissions::NONE.unveil(FILE_NOT_EXISTS), Ok(()));
         // This tests that calls to unveil on missing directories error.
@@ -1216,7 +1447,7 @@ mod tests {
         // This tests that unveil can no longer be called.
         assert_eq!(Permissions::unveil_no_more(), Ok(()));
         assert_eq!(Permissions::NONE.unveil(FILE_EXISTS), Err(Errno::EPERM));
-        assert!(fs::metadata(FILE_EXISTS_STR).is_ok_and(|_| true));
+        assert!(fs::metadata(FILE_EXISTS).is_ok_and(|_| true));
         // The below tests that Promises can only be removed and not added.
         initial_promises.remove_promises([Promise::Unveil]);
         assert_eq!(initial_promises.len(), 2);
@@ -1229,7 +1460,7 @@ mod tests {
         assert_eq!(Promises::new([Promise::Rpath]).pledge(), Err(Errno::EPERM));
         // If the below is uncommented, the program should crash since the above
         // call to pledge no longer allows access to the file system.
-        // drop(fs::metadata(FILE_EXISTS_STR));
+        // drop(fs::metadata(FILE_EXISTS));
     }
     #[cfg(all(feature = "std", target_os = "openbsd"))]
     #[test]
@@ -1245,7 +1476,7 @@ mod tests {
                 )
                 .is_ok_and(|(_, _)| {
                     Permissions::unveil_raw(README, c"r").is_ok_and(|()| {
-                        fs::exists(README_STR).is_ok_and(|exists| {
+                        fs::exists(README).is_ok_and(|exists| {
                             Permissions::NONE.unveil(README).is_ok_and(|()| {
                                 Promises::pledge_raw(c"inet stdio").is_ok_and(|()| {
                                     exists
@@ -1282,23 +1513,21 @@ mod tests {
                 )
                 .is_ok_and(|(_, mut promises)| Permissions::READ
                     .unveil(README)
-                    .is_ok_and(
-                        |()| fs::exists(README_STR).is_ok_and(|exists| Permissions::NONE
-                            .unveil(README)
-                            .is_ok_and(|()| promises
-                                .remove_promises_then_pledge([Promise::Rpath, Promise::Unveil])
-                                .is_ok_and(|()| exists
-                                    && TcpListener::bind(SocketAddrV6::new(
-                                        Ipv6Addr::LOCALHOST,
-                                        588,
-                                        0,
-                                        0
-                                    ))
-                                    .map_or_else(
-                                        |e| matches!(e.kind(), ErrorKind::PermissionDenied),
-                                        |_| false
-                                    ))))
-                    ))
+                    .is_ok_and(|()| fs::exists(README).is_ok_and(|exists| Permissions::NONE
+                        .unveil(README)
+                        .is_ok_and(|()| promises
+                            .remove_promises_then_pledge([Promise::Rpath, Promise::Unveil])
+                            .is_ok_and(|()| exists
+                                && TcpListener::bind(SocketAddrV6::new(
+                                    Ipv6Addr::LOCALHOST,
+                                    588,
+                                    0,
+                                    0
+                                ))
+                                .map_or_else(
+                                    |e| matches!(e.kind(), ErrorKind::PermissionDenied),
+                                    |_| false
+                                ))))))
             );
         }
     }
