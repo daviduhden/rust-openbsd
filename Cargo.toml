@@ -10,7 +10,7 @@ name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
 rust-version = "1.86.0"
-version = "3.0.0-alpha.3.0"
+version = "3.0.0-alpha.4.0"
 
 [lints.rust]
 ambiguous_negative_literals = { level = "deny", priority = -1 }

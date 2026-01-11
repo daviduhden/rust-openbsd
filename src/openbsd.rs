@@ -1113,8 +1113,9 @@ impl Promises {
         // `NULL` is always valid for `promises`.
         Self::inner_pledge(ptr::null())
     }
-    /// Invokes [`pledge(2)`](https://man.openbsd.org/pledge.2) with [`CStr::as_ptr`] from `promises` for
-    /// `promises` and `NULL` for `execpromises`.
+    /// Invokes [`pledge(2)`](https://man.openbsd.org/pledge.2) with
+    /// [`CStr::as_ptr`](https://doc.rust-lang.org/stable/core/ffi/struct.CStr.html#method.as_ptr)
+    /// from `promises` for `promises` and `NULL` for `execpromises`.
     ///
     /// Exposes an API that allows one to `pledge(2)` "directly".
     ///
@@ -1334,8 +1335,9 @@ impl Permissions {
         // `NULL` is valid for both `path` and `permissions`.
         Self::inner_unveil(ptr::null(), ptr::null())
     }
-    /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2)
-    /// passing [`CStr::as_ptr`] from `path` for `path` and `permissions.as_ptr()` for `permissions`.
+    /// Invokes [`unveil(2)`](https://man.openbsd.org/unveil.2) passing
+    /// [`CStr::as_ptr`](https://doc.rust-lang.org/stable/core/ffi/struct.CStr.html#method.as_ptr)
+    /// from `path` for `path` and `permissions.as_ptr()` for `permissions`.
     ///
     /// Exposes an API that allows one to `unveil(2)` "directly".
     ///

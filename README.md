@@ -102,6 +102,23 @@ async fn main() -> Result<Infallible, PrivDropErr<Error>> {
 ```
 </details>
 
+## Cargo "features"
+
+### `alloc`
+
+Enables `alloc` support. While "typical" use of `priv_sep` should work without `alloc`, there are cases
+where one may desire heap allocation. For example if a database entry associated with a user requires
+more than 1 KiB of space, `UserInfo::new` will error with `Errno::ERANGE` when `alloc` is not enabled.
+
+Additional `CStrHelper` `impl`s are exposed as well (e.g., `String`).
+
+### `std`
+
+Enables `std` support. This is useful for additional `CStrHelper` `impl`s (e.g., `OsStr`) as well as
+`TryFrom<Error>` and `From<Errno>`.
+
+This feature implies [`alloc`](#alloc) and is enabled by default via the `default` feature.
+
 ## Minimum Supported Rust Version (MSRV)
 
 This will frequently be updated to be the same as stable. Specifically, any time stable is updated and that

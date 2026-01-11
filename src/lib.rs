@@ -107,6 +107,26 @@
 //! }
 //! ```
 //! </details>
+//!
+//! ## Cargo "features"
+//!
+//! ### `alloc`
+//!
+//! Enables `alloc` support. While "typical" use of `priv_sep` should work without `alloc`, there are cases
+//! where one may desire heap allocation. For example if a database entry associated with a user requires
+//! more than 1 KiB of space, [`UserInfo::new`] will error with [`Errno::ERANGE`] when `alloc` is not enabled.
+//!
+//! Additional [`CStrHelper`] `impl`s are exposed as well (e.g.,
+//! [`String`](./trait.CStrHelper.html#impl-CStrHelper-for-String)).
+//!
+//! ### `std`
+//!
+//! Enables `std` support. This is useful for additional [`CStrHelper`] `impl`s (e.g.,
+//! [`OsStr`](./trait.CStrHelper.html#impl-CStrHelper-for-OsStr)) as well as
+//! [`TryFrom<Error>`](./enum.Errno.html#impl-TryFrom%3CError%3E-for-Errno)
+//! and [`From<Errno>`](./enum.Errno.html#impl-From%3CErrno%3E-for-Error).
+//!
+//! This feature implies [`alloc`](#alloc) and is enabled by default via the `default` feature.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg = false))]
 #![no_std]
@@ -357,20 +377,22 @@ impl From<u32> for Gid {
         Self(value)
     }
 }
-/// Primarily an internal `trait` that allows one to use other types in lieu of
+/// Primarily an internal `trait` that allows one to use a variety of types in lieu of
 /// [`CStr`](https://doc.rust-lang.org/stable/core/ffi/struct.CStr.html).
 pub trait CStrHelper {
-    /// First converts `self` into a `CStr` before passing it into `f`.
+    /// First converts `self` into a
+    /// [`CStr`](https://doc.rust-lang.org/stable/core/ffi/struct.CStr.html)
+    /// before passing it into `f`.
     ///
     /// # Errors
     ///
     /// Errors whenever necessary.
     ///
-    /// If an error occurs due to insufficient buffer space (e.g., when the `alloc` feature is not enabled and
-    /// a `str` is used with length greater than 1023), then [`Errno::ERANGE`] must be returned.
+    /// If an error occurs due to insufficient buffer space (e.g., when [`alloc`](./index.html#alloc) is not
+    /// enabled and a `str` is used with length greater than 1023), then [`Errno::ERANGE`] must be returned.
     ///
-    /// If an error occurs from converting `self` into a `CStr` due to nul bytes, then [`Errno::EINVAL`] must be
-    /// returned.
+    /// If an error occurs from converting `self` into a `CStr` due to nul bytes, then [`Errno::EINVAL`]
+    /// must be returned.
     fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(&self, f: F)
     -> Result<T, Errno>;
 }
@@ -381,6 +403,17 @@ impl CStrHelper for CStr {
         f: F,
     ) -> Result<T, Errno> {
         f(self)
+    }
+}
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[cfg(feature = "alloc")]
+impl CStrHelper for CString {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        self.as_c_str().convert_then_apply(f)
     }
 }
 /// Converts `val` into a `CStr` via heap allocation before applying `f` to it.
@@ -407,7 +440,7 @@ impl CStrHelper for [u8] {
         f: F,
     ) -> Result<T, Errno> {
         /// Maximum stack allocation for `CStr` conversion.
-        const C_STR_MAX_STACK_ALLOCATION: usize = 1024;
+        const C_STR_MAX_STACK_ALLOCATION: usize = 0x400;
         let len = self.len();
         if len < C_STR_MAX_STACK_ALLOCATION {
             let mut buf = MaybeUninit::<[u8; C_STR_MAX_STACK_ALLOCATION]>::uninit();
@@ -555,6 +588,15 @@ impl CStrHelper for Iter<'_> {
     }
 }
 impl<C: CStrHelper + ?Sized> CStrHelper for &C {
+    #[inline]
+    fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
+        &self,
+        f: F,
+    ) -> Result<T, Errno> {
+        (**self).convert_then_apply(f)
+    }
+}
+impl<C: CStrHelper + ?Sized> CStrHelper for &mut C {
     #[inline]
     fn convert_then_apply<T, F: FnOnce(&CStr) -> Result<T, Errno>>(
         &self,
@@ -820,13 +862,13 @@ impl UserInfo {
     ///
     /// Obtains the user database entry returning `None` iff there is no entry; otherwise returns `Self`.
     ///
-    /// A 1024-byte stack-allocated buffer is used to write the database entry into. If [`Errno::ERANGE`]
+    /// A 1 KiB stack-allocated buffer is used to write the database entry into. If [`Errno::ERANGE`]
     /// is returned, then the following will occur:
     ///
-    /// * If `alloc` is not enabled, then the error is returned.
-    /// * If `alloc` is enabled and a 16-bit architecture is used, then a heap-allocated buffer of 16 KiB
+    /// * If [`alloc`](./index.html#alloc) is not enabled, then the error is returned.
+    /// * If [`alloc`](./index.html#alloc) is enabled and a 16-bit architecture is used, then a heap-allocated buffer of 16 KiB
     ///   is used. If this errors, then the error is returned.
-    /// * If `alloc` is enabled and a non-16-bit architecture is used, then a heap-allocated buffer of 1 MiB
+    /// * If [`alloc`](./index.html#alloc) is enabled and a non-16-bit architecture is used, then a heap-allocated buffer of 1 MiB
     ///   is used. If this errors, then the error is returned.
     ///
     /// # Errors
@@ -893,7 +935,7 @@ impl UserInfo {
     /// Note this should rarely be used since most will rely on [`Self::new`], [`Self::priv_drop`], or
     /// [`Self::chroot_then_priv_drop`].
     ///
-    /// Read [`Self::new`] more information on the buffering strategy.
+    /// Read [`Self::new`] for more information on the buffering strategy.
     ///
     /// # Errors
     ///
@@ -1195,7 +1237,7 @@ pub fn setgroups(groups: &[Gid]) -> Result<(), Errno> {
     let size = c_int::try_from(groups.len()).map_err(|_e| Errno::EINVAL)?;
     let gids = groups.as_ptr().cast();
     // SAFETY:
-    // `size` is the length of `gids`, and `gids` is a valid, non-null, alligned pointer to
+    // `size` is the length of `gids`, and `gids` is a valid, non-null, aligned pointer to
     // `u32`s. Note that `Gid` is a `newtype` around `u32` with `repr(transparent)`; thus the above
     // pointer cast is fine.
     let code = unsafe { c::setgroups(size, gids) };
