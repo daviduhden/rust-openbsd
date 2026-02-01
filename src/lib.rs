@@ -112,21 +112,26 @@
 //!
 //! ### `alloc`
 //!
-//! Enables `alloc` support. While "typical" use of `priv_sep` should work without `alloc`, there are cases
-//! where one may desire heap allocation. For example if a database entry associated with a user requires
-//! more than 1 KiB of space, [`UserInfo::new`] will error with [`Errno::ERANGE`] when `alloc` is not enabled.
+//! Enables [`alloc`](https://doc.rust-lang.org/stable/alloc/) support. While "typical" use of `priv_sep`
+//! should work without `alloc`, there are cases where one may desire heap allocation. For example if a
+//! database entry associated with a user requires more than 1 KiB of space, [`UserInfo::new`] will error
+//! with [`Errno::ERANGE`] when `alloc` is not enabled.
 //!
 //! Additional [`CStrHelper`] `impl`s are exposed as well (e.g.,
 //! [`String`](./trait.CStrHelper.html#impl-CStrHelper-for-String)).
 //!
 //! ### `std`
 //!
-//! Enables `std` support. This is useful for additional [`CStrHelper`] `impl`s (e.g.,
-//! [`OsStr`](./trait.CStrHelper.html#impl-CStrHelper-for-OsStr)) as well as
-//! [`TryFrom<Error>`](./enum.Errno.html#impl-TryFrom%3CError%3E-for-Errno)
-//! and [`From<Errno>`](./enum.Errno.html#impl-From%3CErrno%3E-for-Error).
+//! Enables [`std`](https://doc.rust-lang.org/stable/std/) support. This is useful for additional [`CStrHelper`]
+//! `impl`s (e.g., [`OsStr`](./trait.CStrHelper.html#impl-CStrHelper-for-OsStr)) as well as
+//! [`TryFrom<Error>`](./enum.Errno.html#impl-TryFrom%3CError%3E-for-Errno) and
+//! [`From<Errno>`](./enum.Errno.html#impl-From%3CErrno%3E-for-Error).
 //!
 //! This feature implies [`alloc`](#alloc) and is enabled by default via the `default` feature.
+#![expect(
+    clippy::doc_paragraphs_missing_punctuation,
+    reason = "false positive for crate documentation having image links"
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg = false))]
 #![no_std]
