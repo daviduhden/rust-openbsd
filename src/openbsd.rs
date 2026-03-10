@@ -71,8 +71,6 @@ pub enum Promise {
     Stdio,
     /// [`tape`](https://man.openbsd.org/pledge.2#tape).
     Tape,
-    /// [`tmppath`](https://man.openbsd.org/pledge.2#tmppath).
-    Tmppath,
     /// [`tty`](https://man.openbsd.org/pledge.2#tty).
     Tty,
     /// [`unix`](https://man.openbsd.org/pledge.2#unix).
@@ -121,15 +119,14 @@ impl Promise {
             Self::Settime => 0x0100_0000,
             Self::Stdio => 0x0200_0000,
             Self::Tape => 0x0400_0000,
-            Self::Tmppath => 0x0800_0000,
-            Self::Tty => 0x1000_0000,
-            Self::Unix => 0x2000_0000,
-            Self::Unveil => 0x4000_0000,
-            Self::Video => 0x8000_0000,
-            Self::Vminfo => 0x0001_0000_0000,
-            Self::Vmm => 0x0002_0000_0000,
-            Self::Wpath => 0x0004_0000_0000,
-            Self::Wroute => 0x0008_0000_0000,
+            Self::Tty => 0x0800_0000,
+            Self::Unix => 0x1000_0000,
+            Self::Unveil => 0x2000_0000,
+            Self::Video => 0x4000_0000,
+            Self::Vminfo => 0x8000_0000,
+            Self::Vmm => 0x0001_0000_0000,
+            Self::Wpath => 0x0002_0000_0000,
+            Self::Wroute => 0x0004_0000_0000,
         }
     }
 }
@@ -164,7 +161,6 @@ impl Display for Promise {
             Self::Settime => f.write_str("pledge(2) 'settime' promise"),
             Self::Stdio => f.write_str("pledge(2) 'stdio' promise"),
             Self::Tape => f.write_str("pledge(2) 'tape' promise"),
-            Self::Tmppath => f.write_str("pledge(2) 'tmppath' promise"),
             Self::Tty => f.write_str("pledge(2) 'tty' promise"),
             Self::Unix => f.write_str("pledge(2) 'unix' promise"),
             Self::Unveil => f.write_str("pledge(2) 'unveil' promise"),
@@ -231,7 +227,6 @@ impl Promises {
         .add(Promise::Settime)
         .add(Promise::Stdio)
         .add(Promise::Tape)
-        .add(Promise::Tmppath)
         .add(Promise::Tty)
         .add(Promise::Unix)
         .add(Promise::Unveil)
@@ -837,8 +832,6 @@ impl Promises {
         const STDIO: &[u8; 6] = b"stdio ";
         /// b"tape ".
         const TAPE: &[u8; 5] = b"tape ";
-        /// b"tmppath ".
-        const TMPPATH: &[u8; 8] = b"tmppath ";
         /// b"tty ".
         const TTY: &[u8; 4] = b"tty ";
         /// b"unix ".
@@ -883,7 +876,6 @@ impl Promises {
             + SETTIME.len()
             + STDIO.len()
             + TAPE.len()
-            + TMPPATH.len()
             + TTY.len()
             + UNIX.len()
             + UNVEIL.len()
@@ -1031,11 +1023,6 @@ impl Promises {
         if self.contains(Promise::Tape) {
             len += TAPE.len();
             max_buffer[idx..len].copy_from_slice(TAPE);
-            idx = len;
-        }
-        if self.contains(Promise::Tmppath) {
-            len += TMPPATH.len();
-            max_buffer[idx..len].copy_from_slice(TMPPATH);
             idx = len;
         }
         if self.contains(Promise::Tty) {

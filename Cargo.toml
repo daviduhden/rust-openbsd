@@ -9,8 +9,8 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-rust-version = "1.93.0"
-version = "3.0.0-alpha.4.1"
+rust-version = "1.93.1"
+version = "3.0.0-alpha.5.0"
 
 [lints.rust]
 deprecated-safe = { level = "deny", priority = -1 }
@@ -91,6 +91,9 @@ single_call_fn = "allow"
 single_char_lifetime_names = "allow"
 semicolon_inside_block = "allow"
 
+[lints.rustdoc]
+all = { level = "deny", priority = -1 }
+
 [package.metadata.docs.rs]
 all-features = true
 cargo-args = ["-Zbuild-std=std"]
@@ -109,7 +112,7 @@ targets = [
 ]
 
 [dev-dependencies]
-tokio = { version = "1.49.0", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.50.0", default-features = false, features = ["macros", "net", "rt"] }
 
 
 ### FEATURES #################################################################
