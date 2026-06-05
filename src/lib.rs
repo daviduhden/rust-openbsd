@@ -871,10 +871,10 @@ impl UserInfo {
     /// is returned, then the following will occur:
     ///
     /// * If [`alloc`](./index.html#alloc) is not enabled, then the error is returned.
-    /// * If [`alloc`](./index.html#alloc) is enabled and a 16-bit architecture is used, then a heap-allocated buffer of 16 KiB
-    ///   is used. If this errors, then the error is returned.
-    /// * If [`alloc`](./index.html#alloc) is enabled and a non-16-bit architecture is used, then a heap-allocated buffer of 1 MiB
-    ///   is used. If this errors, then the error is returned.
+    /// * If [`alloc`](./index.html#alloc) is enabled and a 16-bit architecture is used, then a heap-allocated
+    ///   buffer of 16 KiB is used. If this errors, then the error is returned.
+    /// * If [`alloc`](./index.html#alloc) is enabled and a non-16-bit architecture is used, then a heap-allocated
+    ///   buffer of 1 MiB is used. If this errors, then the error is returned.
     ///
     /// # Errors
     ///
@@ -884,7 +884,7 @@ impl UserInfo {
     ///
     /// ```no_run
     /// # use priv_sep::UserInfo;
-    /// assert!(UserInfo::new(c"root")?.map_or(false, |info| info.is_root()));
+    /// assert!(UserInfo::new(c"root")?.is_some_and(|info| info.is_root()));
     /// # Ok::<_, priv_sep::Errno>(())
     /// ```
     #[inline]

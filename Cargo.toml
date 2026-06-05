@@ -9,8 +9,8 @@ license = "MIT OR Apache-2.0"
 name = "priv_sep"
 readme = "README.md"
 repository = "https://git.philomathiclife.com/repos/priv_sep/"
-rust-version = "1.93.1"
-version = "3.0.0-alpha.5.0"
+rust-version = "1.96.0"
+version = "3.0.0-alpha.5.1"
 
 [lints.rust]
 deprecated-safe = { level = "deny", priority = -1 }
@@ -33,6 +33,7 @@ deref-into-dyn-supertrait = { level = "deny", priority = -1 }
 ffi-unwind-calls = { level = "deny", priority = -1 }
 #fuzzy-provenance-casts = { level = "deny", priority = -1 }
 impl-trait-redundant-captures = { level = "deny", priority = -1 }
+linker-info = { level = "deny", priority = -1 }
 linker-messages = { level = "deny", priority = -1 }
 #lossy-provenance-casts = { level = "deny", priority = -1 }
 macro-use-extern-crate = { level = "deny", priority = -1 }
@@ -112,7 +113,7 @@ targets = [
 ]
 
 [dev-dependencies]
-tokio = { version = "1.50.0", default-features = false, features = ["macros", "net", "rt"] }
+tokio = { version = "1.52.3", default-features = false, features = ["macros", "net", "rt"] }
 
 
 ### FEATURES #################################################################
