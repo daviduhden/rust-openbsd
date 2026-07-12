@@ -161,4 +161,4 @@ documentation can be built.
 ### Status
 
 The crate is only tested on the `x86_64-unknown-linux-gnu`, `x86_64-unknown-openbsd`, and `aarch64-apple-darwin`
-targets; but it should work on most of the supported platforms.
+targets; but it should work on all of the supported platforms.
