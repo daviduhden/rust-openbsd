@@ -1,0 +1,147 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate YAML
+        run: |
+          set -eu
+          python3 -m pip install --user 'yamllint>=1.35,<2'
+          python3 -m yamllint --strict .
+
+      - name: Audit workflows with zizmor
+        run: |
+          set -eu
+          python3 -m pip install --user 'zizmor>=1,<2'
+          "${HOME}/.local/bin/zizmor" --persona=pedantic .
+
+  openbsd-79-amd64:
+    name: OpenBSD 7.9 (amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and test on OpenBSD 7.9
+        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
+        with:
+          release: "7.9"
+          sync-time: true
+          copyback: false
+          prepare: &vm-prepare |
+            set -eu
+
+            echo "== VM environment =="
+            uname -a
+            uname -m
+            sysctl kern.version
+
+            echo "== Installing the native Rust toolchain =="
+            # OpenBSD ships rustc and cargo in `lang/rust`; clippy and rustfmt
+            # are separate packages. There is no rustup on OpenBSD.
+            pkg_add rust rust-clippy rust-rustfmt
+
+            echo "== Toolchain versions =="
+            rustc --version
+            cargo --version
+            cargo clippy --version
+            cargo fmt --version
+
+            echo "== Creating unprivileged build user =="
+            groupadd builder
+            useradd -m -g builder -s /bin/ksh builder
+            chown -R builder:builder "$GITHUB_WORKSPACE"
+            printf 'permit nopass root as builder\n' > /etc/doas.conf
+
+          run: &vm-run |
+            set -eu
+            cd "$GITHUB_WORKSPACE"
+
+            echo "== Unprivileged build and tests =="
+            cat > /tmp/openbsd-build.ksh <<'EOF'
+            set -eu
+            export CARGO_TERM_COLOR=never
+
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --all-features -- -D warnings
+            cargo test --all-features -- --nocapture
+            cargo test
+
+            # Feature combinations, including no_std without allocation.
+            cargo build --no-default-features
+            cargo build --no-default-features --features alloc
+
+            cargo doc --no-deps --all-features
+
+            # Package metadata and contents.
+            cargo package --allow-dirty
+            EOF
+            chown builder /tmp/openbsd-build.ksh
+            if ! doas -u builder /bin/ksh /tmp/openbsd-build.ksh; then
+                echo "== dmesg tail ==" >&2
+                dmesg | tail -30 >&2
+                exit 1
+            fi
+
+            echo "== Privileged tests as root =="
+            if ! cargo test --all-features -- --nocapture > /tmp/openbsd-root.log 2>&1; then
+                cat /tmp/openbsd-root.log
+                echo "ERROR: privileged test run failed" >&2
+                exit 1
+            fi
+            cat /tmp/openbsd-root.log
+            if grep -q 'requires root privileges' /tmp/openbsd-root.log; then
+                echo "ERROR: privileged tests were unexpectedly skipped" >&2
+                exit 1
+            fi
+            echo "Privileged tests executed and passed."
+
+  openbsd-79-arm64:
+    name: OpenBSD 7.9 (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and test on OpenBSD 7.9
+        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
+        with:
+          release: "7.9"
+          arch: aarch64
+          sync-time: true
+          copyback: false
+          prepare: *vm-prepare
+          run: *vm-run

@@ -1,70 +1,66 @@
 [package]
-authors = ["Zack Newman <zack@philomathiclife.com>"]
+authors = [
+  "Zack Newman <zack@philomathiclife.com>",
+  "David Uhden Collado <david@uhden.dev>",
+]
 categories = ["external-ffi-bindings", "no-std::no-alloc", "os::unix-apis"]
-description = "FFI for chroot(2), pledge(2), setgroups(2), setresgid(2), setresuid(2), and unveil(2)."
-documentation = "https://docs.rs/priv_sep/latest/priv_sep/"
+description = "OpenBSD-only bindings for pledge(2), unveil(2), chroot(2), and daemon-style privilege dropping."
+documentation = "https://docs.rs/openbsd-rust/latest/openbsd_rust/"
 edition = "2024"
-keywords = ["ffi", "openbsd", "privsep", "security", "unix"]
+keywords = ["openbsd", "pledge", "unveil", "privsep", "security"]
 license = "MIT OR Apache-2.0"
-name = "priv_sep"
+name = "openbsd-rust"
 readme = "README.md"
-repository = "https://git.philomathiclife.com/repos/priv_sep/"
-rust-version = "1.97.0"
-version = "3.0.0-alpha.5.1"
+repository = "https://github.com/daviduhden/openbsd-rust"
+# Upstream `priv_sep` declared 1.97.0, which does not exist on OpenBSD 7.9
+# (the release ships Rust 1.94.1). 1.85.0 is the edition-2024 minimum and the
+# lowest toolchain that provides every language feature this crate uses.
+rust-version = "1.85.0"
+version = "0.1.0"
 
 [lints.rust]
-deprecated-safe = { level = "deny", priority = -1 }
-future-incompatible = { level = "deny", priority = -1 }
-keyword-idents = { level = "deny", priority = -1 }
-let-underscore = { level = "deny", priority = -1 }
-nonstandard-style = { level = "deny", priority = -1 }
-refining-impl-trait = { level = "deny", priority = -1 }
-rust-2018-compatibility = { level = "deny", priority = -1 }
-rust-2018-idioms = { level = "deny", priority = -1 }
-rust-2021-compatibility = { level = "deny", priority = -1 }
-rust-2024-compatibility = { level = "deny", priority = -1 }
-unknown-or-malformed-diagnostic-attributes = { level = "deny", priority = -1 }
+deprecated_safe = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+keyword_idents = { level = "deny", priority = -1 }
+let_underscore = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+refining_impl_trait = { level = "deny", priority = -1 }
+rust_2018_compatibility = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2021_compatibility = { level = "deny", priority = -1 }
+rust_2024_compatibility = { level = "deny", priority = -1 }
+unknown_or_malformed_diagnostic_attributes = { level = "deny", priority = -1 }
 unused = { level = "deny", priority = -1 }
 warnings = { level = "deny", priority = -1 }
-ambiguous-negative-literals = { level = "deny", priority = -1 }
-closure-returning-async-block = { level = "deny", priority = -1 }
-dead-code-pub-in-binary = { level = "deny", priority = -1 }
-deprecated-in-future = { level = "deny", priority = -1 }
-#deprecated-llvm-intrinsic = { level = "deny", priority = -1 }
-deref-into-dyn-supertrait = { level = "deny", priority = -1 }
-ffi-unwind-calls = { level = "deny", priority = -1 }
-#fuzzy-provenance-casts = { level = "deny", priority = -1 }
-impl-trait-redundant-captures = { level = "deny", priority = -1 }
-linker-info = { level = "deny", priority = -1 }
-#lossy-provenance-casts = { level = "deny", priority = -1 }
-macro-use-extern-crate = { level = "deny", priority = -1 }
-meta-variable-misuse = { level = "deny", priority = -1 }
-missing-copy-implementations = { level = "deny", priority = -1 }
-missing-debug-implementations = { level = "deny", priority = -1 }
-missing-docs = { level = "deny", priority = -1 }
-#multiple-supertrait-upcastable = { level = "deny", priority = -1 }
-#must-not-suspend = { level = "deny", priority = -1 }
-non-ascii-idents = { level = "deny", priority = -1 }
-#non-exhaustive-omitted-patterns = { level = "deny", priority = -1 }
-redundant-imports = { level = "deny", priority = -1 }
-redundant-lifetimes = { level = "deny", priority = -1 }
-#resolving-to-items-shadowing-supertrait-items = { level = "deny", priority = -1 }
-#shadowing-supertrait-items = { level = "deny", priority = -1 }
-single-use-lifetimes = { level = "deny", priority = -1 }
-trivial-casts = { level = "deny", priority = -1 }
-trivial-numeric-casts = { level = "deny", priority = -1 }
-unit-bindings = { level = "deny", priority = -1 }
-unnameable-types = { level = "deny", priority = -1 }
-#unqualified-local-imports = { level = "deny", priority = -1 }
-unreachable-pub = { level = "deny", priority = -1 }
-unsafe-code = { level = "deny", priority = -1 }
-unstable-features = { level = "deny", priority = -1 }
-unused-crate-dependencies = { level = "deny", priority = -1 }
-unused-import-braces = { level = "deny", priority = -1 }
-unused-lifetimes = { level = "deny", priority = -1 }
-unused-qualifications = { level = "deny", priority = -1 }
-unused-results = { level = "deny", priority = -1 }
-variant-size-differences = { level = "deny", priority = -1 }
+ambiguous_negative_literals = { level = "deny", priority = -1 }
+closure_returning_async_block = { level = "deny", priority = -1 }
+deprecated_in_future = { level = "deny", priority = -1 }
+deref_into_dyn_supertrait = { level = "deny", priority = -1 }
+ffi_unwind_calls = { level = "deny", priority = -1 }
+impl_trait_redundant_captures = { level = "deny", priority = -1 }
+linker_info = { level = "deny", priority = -1 }
+macro_use_extern_crate = { level = "deny", priority = -1 }
+meta_variable_misuse = { level = "deny", priority = -1 }
+missing_copy_implementations = { level = "deny", priority = -1 }
+missing_debug_implementations = { level = "deny", priority = -1 }
+missing_docs = { level = "deny", priority = -1 }
+non_ascii_idents = { level = "deny", priority = -1 }
+redundant_imports = { level = "deny", priority = -1 }
+redundant_lifetimes = { level = "deny", priority = -1 }
+single_use_lifetimes = { level = "deny", priority = -1 }
+trivial_casts = { level = "deny", priority = -1 }
+trivial_numeric_casts = { level = "deny", priority = -1 }
+unit_bindings = { level = "deny", priority = -1 }
+unnameable_types = { level = "deny", priority = -1 }
+unreachable_pub = { level = "deny", priority = -1 }
+unsafe_code = { level = "deny", priority = -1 }
+unstable_features = { level = "deny", priority = -1 }
+unused_crate_dependencies = { level = "deny", priority = -1 }
+unused_import_braces = { level = "deny", priority = -1 }
+unused_lifetimes = { level = "deny", priority = -1 }
+unused_qualifications = { level = "deny", priority = -1 }
+unused_results = { level = "deny", priority = -1 }
+variant_size_differences = { level = "deny", priority = -1 }
 
 [lints.clippy]
 cargo = { level = "deny", priority = -1 }
@@ -73,50 +69,53 @@ correctness = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
-restriction = { level = "deny", priority = -1 }
 style = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
-# Noisy, opinionated, and likely don't prevent bugs or improve APIs.
+# Security-relevant restriction lints are enabled individually. The blanket
+# `restriction` group is dominated by stylistic rules (for example, requiring
+# `#[inline]` on every public function) that conflict with idiomatic Rust and
+# with the prescribed public API.
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+exit = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+integer_division = "deny"
+mem_forget = "deny"
+multiple_unsafe_ops_per_block = "deny"
+panic = "deny"
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"
+# Noisy or opinionated rules that do not prevent bugs and conflict with the
+# required API naming.
 arbitrary_source_item_ordering = "allow"
 blanket_clippy_restriction_lints = "allow"
+doc_paragraphs_missing_punctuation = "allow"
 exhaustive_enums = "allow"
 exhaustive_structs = "allow"
 implicit_return = "allow"
 inline_trait_bounds = "allow"
 min_ident_chars = "allow"
 missing_trait_methods = "allow"
+module_name_repetitions = "allow"
 pub_with_shorthand = "allow"
 question_mark_used = "allow"
 redundant_pub_crate = "allow"
 ref_patterns = "allow"
 return_and_then = "allow"
+similar_names = "allow"
 single_call_fn = "allow"
 single_char_lifetime_names = "allow"
+struct_field_names = "allow"
 semicolon_inside_block = "allow"
+too_many_lines = "allow"
 
 [lints.rustdoc]
 all = { level = "deny", priority = -1 }
 
 [package.metadata.docs.rs]
 all-features = true
-cargo-args = ["-Zbuild-std=std"]
-default-target = "x86_64-unknown-linux-gnu"
-targets = [
-  "aarch64-apple-darwin",
-  "aarch64-unknown-linux-gnu",
-  "aarch64-unknown-linux-musl",
-  "i686-unknown-linux-gnu",
-  "powerpc64-unknown-linux-gnu",
-  "riscv64gc-unknown-linux-gnu",
-  "x86_64-unknown-freebsd",
-  "x86_64-unknown-linux-musl",
-  "x86_64-unknown-netbsd",
-  "x86_64-unknown-openbsd"
-]
-
-[dev-dependencies]
-tokio = { version = "1.52.3", default-features = false, features = ["macros", "net", "rt"] }
-
+rustdoc-args = ["--cfg", "docsrs"]
 
 ### FEATURES #################################################################
 

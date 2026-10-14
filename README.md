@@ -1,164 +1,311 @@
-Privilege separation library for Unix-likes OSes
-================================================
+# openbsd-rust
 
-[<img alt="git" src="https://git.philomathiclife.com/badges/priv_sep.svg" height="20">](https://git.philomathiclife.com/priv_sep/log.html)
-[<img alt="crates.io" src="https://img.shields.io/crates/v/priv_sep.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/priv_sep)
-[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-priv_sep-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/priv_sep/latest/priv_sep/)
+Idiomatic, OpenBSD-only Rust bindings for the security facilities that are
+unique to [OpenBSD](https://www.openbsd.org/):
 
-`priv_sep` is a library that uses the system's libc to perform privilege separation and privilege reduction
-for Unix-like platforms. The following `target_os` values are supported:
+| Facility | Module | Restricts/provides |
+| --- | --- | --- |
+| [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](https://docs.rs/openbsd-rust/latest/openbsd_rust/pledge/index.html) | which system operations the process may perform |
+| [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/openbsd-rust/latest/openbsd_rust/unveil/index.html) | which filesystem paths the process may access |
+| privilege dropping | [`privileges`](https://docs.rs/openbsd-rust/latest/openbsd_rust/privileges/index.html) | the credentials (UID/GID/groups) of the process |
+| [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/openbsd-rust/latest/openbsd_rust/chroot/index.html) | the filesystem root for pathname resolution |
 
-* `dragonfly`
-* `freebsd`
-* `linux`
-* `macos`
-* `netbsd`
-* `openbsd`
+These mechanisms restrict *different dimensions* of process authority and are
+normally complementary: a typical OpenBSD daemon uses all of them. They are not
+interchangeable.
 
-## `priv_sep` in action
+## Scope
 
-```rust
-use core::convert::Infallible;
-use priv_sep::{PrivDropErr, UserInfo};
-use std::{
-    io::Error,
-    net::{Ipv6Addr, SocketAddrV6},
-};
-use tokio::net::TcpListener;
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<Infallible, PrivDropErr<Error>> {
-    // Get the user ID and group ID for nobody from `passwd(5)`.
-    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
-    // Bind to TCP `[::1]:443` as root.
-    // `setgroups(2)` to drop all supplementary groups.
-    // `setresgid(2)` to the group ID associated with nobody.
-    // `setresuid(2)` to the user ID associated with nobody.
-    let listener =
-        UserInfo::chroot_then_priv_drop_async(c"nobody", c"/path/chroot/", false, async || {
-            TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await
-        })
-        .await?;
-    // At this point, the process is running under nobody.
-    loop {
-        // Handle TCP connections.
-        if let Ok((_, ip)) = listener.accept().await {
-            assert!(ip.is_ipv6());
-        }
-    }
-}
+This crate is deliberately **OpenBSD-only**. Building it for any other operating
+system fails with a clear compile-time error; there are no stub
+implementations, no fallback behavior, and no portability abstractions. The only
+exception is documentation builds (`cargo doc`, which sets `cfg(doc)`), so that
+the API can be rendered from any host.
+
+The crate provides the primitives needed to build a privilege-separated
+OpenBSD program. It is intentionally **not** a sandbox framework, daemon, or
+command-line tool, and it deliberately does not add a `fork`-based convenience
+API: the safe use of post-`fork(2)` state in a multi-threaded process cannot be
+guaranteed by a library.
+
+## Supported OpenBSD versions
+
+* Targets **OpenBSD 7.9** and **OpenBSD-current**.
+* The [`Promise`] list is verified against the kernel's `pledgereq` table in
+  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c)
+  (35 promises; `tmppath` removed; `disklabel`, `drm`, and `vmm` included).
+* Unveil permissions are verified against
+  [`sys/kern/kern_unveil.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_unveil.c):
+  `r`, `w`, `x`, `c`, with the empty permission set valid.
+* Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
+  `NGROUPS_MAX` (16).
+
+[`Promise`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Promise.html
+
+## Installation
+
+```console
+cargo add openbsd-rust
 ```
 
-<details>
-<summary>Incorporating <a href="https://man.openbsd.org/pledge.2"><code>pledge(2)</code></a> and <a href="https://man.openbsd.org/unveil.2"><code>unveil(2)</code></a> on OpenBSD</summary>
+or, in `Cargo.toml`:
+
+```toml
+[dependencies]
+openbsd-rust = "0.1"
+```
+
+The crate has **no runtime dependencies**. `no_std` is supported with optional
+`alloc` and `std` features (`std` is on by default).
+
+## API overview
+
+### `pledge(2)`
+
+[`Promise`] is the typed promise enumeration; [`Promises`] is a set of promises
+that can only be reduced. The native call has two independent arguments —
+`promises` and `execpromises` — and both are exposed.
 
 ```rust
-use core::convert::Infallible;
-use priv_sep::{Permissions, PrivDropErr, Promise, Promises};
-use std::{
-    fs,
-    io::Error,
-    net::{Ipv6Addr, SocketAddrV6},
-};
-use tokio::net::TcpListener;
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<Infallible, PrivDropErr<Error>> {
-    /// Config file.
-    const CONFIG: &str = "config";
-    // Get the user ID and group ID for nobody from `passwd(5)`.
-    // `chroot(2)` to `/path/chroot/` and `chdir(2)` to `/`.
-    // `pledge(2)` `id`, `inet`, `rpath`, `stdio`, and `unveil`.
-    // Bind to TCP `[::1]:443` as root.
-    // `setgroups(2)` to drop all supplementary groups.
-    // `setresgid(2)` to the group ID associated with nobody.
-    // `setresuid(2)` to the user ID associated with nobody.
-    // Remove `id` from our `pledge(2)`d promises.
-    let (listener, mut promises) = Promises::new_chroot_then_priv_drop_async(
-        c"nobody",
-        c"/path/chroot/",
-        [Promise::Inet, Promise::Rpath, Promise::Unveil],
-        false,
-        async || TcpListener::bind(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0)).await,
-    )
-    .await?;
-    // At this point, the process is running under nobody.
-    // Only allow file system access to `config` and only allow read access to it.
-    Permissions::READ.unveil(CONFIG)?;
-    // Read `config`.
-    // This will of course fail if the file does not exist or nobody does not
-    // have read permissions.
-    let config = fs::read(CONFIG).map_err(PrivDropErr::Other)?;
-    // Remove file system access.
-    Permissions::NONE.unveil(CONFIG)?;
-    // Remove `rpath` and `unveil` from our `pledge(2)`d promises
-    // (i.e., only have `inet` and `stdio` abilities when we begin accepting TCP connections).
-    promises.remove_promises_then_pledge([Promise::Rpath, Promise::Unveil])?;
-    loop {
-        // Handle TCP connections.
-        if let Ok((_, ip)) = listener.accept().await {
-            assert!(ip.is_ipv6());
-        }
-    }
-}
+use openbsd_rust::{pledge, Promise, Promises};
+
+let promises = Promises::new([Promise::Stdio, Promise::Rpath]);
+pledge(&promises)?;                        // pledge(promises, NULL)
+# Ok::<(), openbsd_rust::Errno>(())
 ```
-</details>
 
-## Cargo "features"
+Calls are monotonic: a later call may only *reduce* the set, and an attempt to
+increase it fails with `EPERM`. A `SIGABRT` (uncatchable) is raised if the
+process performs an operation outside the declared promises. The `error`
+promise changes that to `ENOSYS` and makes promise increases silently ignored.
 
-### `alloc`
+#### Execution promises
 
-Enables [`alloc`](https://doc.rust-lang.org/stable/alloc/) support. While "typical" use of `priv_sep` should work
-without `alloc`, there are cases where one may desire heap allocation. For example if a database entry associated
-with a user requires more than 1 KiB of space, `UserInfo::new` will error with `Errno::ERANGE` when `alloc` is not
-enabled.
+`execpromises` restrict programs started later with `execve(2)`:
 
-Additional `CStrHelper` `impl`s are exposed as well (e.g., `String`).
+```rust
+use openbsd_rust::{pledge_both, pledge_child, Promise, Promises};
 
-### `std`
+// Set both parts atomically: keep stdio/rpath/proc/exec now, and force any
+// future executed program to start with only stdio.
+pledge_both(
+    &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
+    &Promises::new([Promise::Stdio]),
+)?;
 
-Enables [`std`](https://doc.rust-lang.org/stable/std/) support. This is useful for additional `CStrHelper` `impl`s
-(e.g., `OsStr`) as well as `TryFrom<Error>` and `From<Errno>`.
+// Or restrict only future executions, leaving the current process alone.
+pledge_child(&Promises::new([Promise::Stdio]))?;
+# Ok::<(), openbsd_rust::Errno>(())
+```
 
-This feature implies [`alloc`](#alloc) and is enabled by default via the `default` feature.
+Exec promises are inherited across `fork(2)`, so the recommended way to configure
+the policy of a fork/exec child is to call [`pledge_child`] in the parent before
+forking. When `execpromises` is left unset, restrictions do **not** automatically
+carry across `execve(2)`; the new image starts unpledged.
 
-## Minimum Supported Rust Version (MSRV)
+#### `NULL` versus the empty string
 
-This will frequently be updated to be the same as stable. Specifically, any time stable is updated and that
-update has "useful" features or compilation no longer succeeds (e.g., due to new compiler lints), then MSRV
-will be updated.
+[`pledge_parts`] is the full typed interface to
+`int pledge(const char *promises, const char *execpromises)`:
 
-MSRV changes will correspond to a SemVer minor version bump.
+| Argument | Value | Meaning |
+| --- | --- | --- |
+| `promises` | `None` | `NULL`: do not change the current promises |
+| `promises` | `Some(&Promises::NONE)` | `""`: restrict the process to `_exit(2)` only |
+| `promises` | `Some(set)` | set the current promises to `set` |
+| `execpromises` | `None` | `NULL`: do not change the exec promises |
+| `execpromises` | `Some(&Promises::NONE)` | `""`: future execs start with no promises |
 
-## SemVer Policy
+[`pledge_raw`] exposes the raw `Option<&CStr>` form when the promise list is only
+known at runtime.
 
-* All on-by-default features of this library are covered by SemVer
-* MSRV is considered exempt from SemVer as noted above
+### `unveil(2)`
 
-## License
+```rust
+use openbsd_rust::{unveil_and_lock, Permission, Permissions};
 
-Licensed under either of
+let read = Permissions::READ;
+let read_write_create = Permissions::READ
+    .enable(Permission::Write)
+    .enable(Permission::Create);
 
-* Apache License, Version 2.0 ([LICENSE-APACHE](https://www.apache.org/licenses/LICENSE-2.0))
-* MIT license ([LICENSE-MIT](https://opensource.org/licenses/MIT))
+unveil_and_lock([
+    ("/", read),
+    ("/var/www", read),
+    ("/var/log/myapp", read_write_create),
+])?;
+# Ok::<(), openbsd_rust::Errno>(())
+```
 
-at your option.
+* [`unveil`] adds a single rule; [`unveil_paths`] adds several.
+* [`lock_unveil`] is `unveil(NULL, NULL)` and permanently locks the
+  configuration; [`unveil_and_lock`] installs rules and locks.
+* Paths are accepted through [`CStrHelper`], so they may be `Path`, `OsStr`,
+  `str`, or raw byte slices and need not be valid UTF-8. Interior NUL bytes are
+  rejected.
 
-## Contribution
+Denied access surfaces later as `EACCES`/`ENOENT` at the filesystem call site,
+not as an error from this crate.
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
-as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+### Privilege dropping
 
-Before any PR is sent, `cargo clippy --all-targets`, `cargo test --all-targets`, and `cargo test --doc` should be
-run _for each possible combination of "features"_ using the stable and MSRV toolchains. One easy way to achieve this
-is by invoking [`ci-cargo`](https://crates.io/crates/ci-cargo) as `ci-cargo clippy --all-targets test --all-targets`
-in the `priv_sep` directory.
+```rust
+use openbsd_rust::{drop_privileges, GroupPolicy};
 
-Additionally, one should test all `ignore` tests as both root and non-root for both toolchains. These tests should
-be run individually since they may interfere with each other.
+// Privileged initialization happens first (bind sockets, open logs, ...).
+drop_privileges("_mydaemon")?;                     // restrictive daemon policy
 
-Last, `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features -Zbuild-std=std` should be run to ensure
-documentation can be built.
+// Or choose the login-style supplementary-group policy explicitly.
+drop_privileges_with(GroupPolicy::Initgroups, "_mydaemon")?;
+# Ok::<(), openbsd_rust::PrivDropError>(())
+```
 
-### Status
+[`drop_privileges`] resolves the account and performs the sequence used by
+OpenBSD base-system daemons:
 
-The crate is only tested on the `x86_64-unknown-linux-gnu`, `x86_64-unknown-openbsd`, and `aarch64-apple-darwin`
-targets; but it should work on all of the supported platforms.
+1. resolve the destination account while still privileged;
+2. set the supplementary groups while still privileged;
+3. [`setresgid(2)`](https://man.openbsd.org/setresgid.2) for the real, effective,
+   and saved GIDs;
+4. [`setresuid(2)`](https://man.openbsd.org/setresuid.2) for the real, effective,
+   and saved UIDs;
+5. verify the resulting credentials.
+
+The [`Account`] type stores the login name inline (bounded by `LOGIN_NAME_MAX`),
+so [`drop_privileges_to`] can resolve the account before, for example,
+[`chroot()`] makes the password database unreachable.
+
+Two supplementary-group policies are supported:
+
+* `GroupPolicy::PrimaryGroupOnly` (the default): keep only the destination
+  primary GID — the restrictive daemon policy (`setgroups(1, &gid)`).
+* `GroupPolicy::Initgroups`: adopt the account's supplementary groups through
+  `initgroups(3)` — login-style behavior.
+
+A failed step returns a [`PrivDropError`] that identifies the failing operation
+and preserves the underlying [`Errno`]. **Credential changes are not
+reversible**: after a partial failure the process may already have reduced
+privileges and must not continue normal service execution. The library never
+pretends that a failed drop restored the original identity and provides no
+privilege-restoration API.
+
+### `chroot(2)`
+
+```rust
+use openbsd_rust::enter_chroot;
+
+enter_chroot("/var/empty")?;   // chroot(path) followed by chdir("/")
+# Ok::<(), openbsd_rust::Errno>(())
+```
+
+[`chroot`] is the raw call; [`enter_chroot`] performs `chroot(path)` then
+`chdir("/")` to close the classic `".."` escape. `chroot(2)` requires root, is
+not covered by any pledge promise (do it *before* pledging), and is not a
+substitute for `pledge(2)`, `unveil(2)`, or privilege dropping.
+
+### Recommended order
+
+```
+privileged initialization
+    -> chroot
+    -> unveil + lock
+    -> initial pledge (still including "id" and, if needed, "getpw")
+    -> drop privileges
+    -> final pledge (without "id")
+    -> optional pledge_child for future execs
+    -> service loop
+```
+
+## Error semantics
+
+* Failing `pledge(2)`, `unveil(2)`, and `chroot(2)` calls return [`Errno`], the
+  error reported by the kernel (`EPERM`, `EINVAL`, `ENOENT`, ...).
+* `pledge(2)` violations do not return an error: the kernel aborts the process
+  with an uncatchable `SIGABRT` unless the `error` promise is active.
+* `unveil(2)` denials surface later as `EACCES`/`ENOENT` at the filesystem call
+  site.
+* [`Errno`] implements [`core::error::Error`] and, with the `std` feature,
+  converts to and from [`std::io::Error`].
+* Strings that cross the FFI boundary are rejected if they contain embedded NUL
+  bytes rather than being silently truncated.
+
+## Security limitations
+
+* Applying pledge restrictions to a process that has already started threads, an
+  asynchronous runtime, or libraries that need further system calls can abort the
+  process. The kernel unwinds sibling threads while cleaning up unveil state, and
+  the resumed threads then perform syscalls the fresh restriction forbids.
+* `chroot(2)` is not a sandbox: a root process may escape it, and open file
+  descriptors keep access to resources outside the new root.
+* `unveil(2)` restrictions are process-wide and, once locked, cannot be changed.
+* Privilege dropping is irreversible. Treat any [`PrivDropError`] as fatal.
+* This crate provides primitives, not a sandbox. Correctness depends on the
+  caller performing the transitions in the documented order.
+
+## Testing
+
+The unit tests cover pure serialization and set logic and run anywhere the crate
+compiles. The integration tests exercise the real OpenBSD kernel and **must run
+on OpenBSD**:
+
+```console
+cargo test
+```
+
+Every destructive or irreversible test runs in an isolated child process, so the
+test runner never loses privileges or has its authority restricted. Tests that
+trigger `SIGABRT` inspect the child's termination status. Tests that require root
+skip cleanly when the runner is not root; run them separately as root:
+
+```console
+doas cargo test -- --nocapture
+```
+
+A passing unprivileged run does **not** prove that privilege dropping works; the
+privileged stage must be executed as root. Some exec-promise tests compile a
+small C probe with the system compiler and skip when `cc` is unavailable.
+
+## Minimum supported Rust version
+
+**Rust 1.85.0** (the edition-2024 minimum). Upstream `priv_sep` declared a newer
+MSRV that does not exist on OpenBSD 7.9, which ships Rust 1.94.1; 1.85.0 is the
+lowest toolchain that provides every language feature used here.
+
+## Licensing and attribution
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.
+
+This project is a fork of [`priv_sep`](https://git.philomathiclife.com/repos/priv_sep)
+by **Zack Newman**, which is dual-licensed under MIT and Apache-2.0. The original
+copyright notices and licenses are preserved. Large parts of the FFI structure,
+the typed `Promises`/`Permissions` sets, the `CStrHelper` path conversion, and the
+OpenBSD `errno` table originate from that project and are retained here.
+
+The [Haskell `openbsd` package](https://github.com/daviduhden/haskell-openbsd) by
+**James Hobson** and **David Uhden Collado** (BSD-3-Clause) is used as the
+functional reference: its public API, documented semantics, and kernel-tested
+behavior are the feature-parity baseline. No Haskell source code is reused; it is
+treated as a behavioral specification.
+
+This is a fork, not an independent clean-room implementation, and it does not
+represent the original upstream work as new.
+
+[`Promise`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Promise.html
+[`Promises`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/struct.Promises.html
+[`pledge_child`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_child.html
+[`pledge_parts`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_parts.html
+[`pledge_raw`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_raw.html
+[`unveil`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil.html
+[`unveil_paths`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil_paths.html
+[`lock_unveil`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.lock_unveil.html
+[`unveil_and_lock`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil_and_lock.html
+[`CStrHelper`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/trait.CStrHelper.html
+[`drop_privileges`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.drop_privileges.html
+[`drop_privileges_to`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.drop_privileges_to.html
+[`Account`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/struct.Account.html
+[`chroot`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.chroot.html
+[`chroot()`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.chroot.html
+[`enter_chroot`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.enter_chroot.html
+[`PrivDropError`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.PrivDropError.html
+[`Errno`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Errno.html
