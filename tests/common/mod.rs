@@ -126,6 +126,18 @@ main(int argc, char **argv)
 }
 "#;
 
+/// Returns a unique `(source, binary)` pair under `/tmp` for a probe.
+///
+/// The counter and the process id keep concurrent test threads and the parent
+/// and child test processes from racing on the same files.
+fn probe_paths(stem: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let base = format!("{stem}-{}-{seq}", std::process::id());
+    let dir = std::path::Path::new("/tmp");
+    (dir.join(format!("{base}.c")), dir.join(base))
+}
+
 /// Compiles the exec-promise probe and returns its path.
 ///
 /// The probe is linked statically: a dynamically linked executable needs the
@@ -135,9 +147,7 @@ main(int argc, char **argv)
 /// Returns `None` when the system C compiler is unavailable or cannot link
 /// statically, so that the calling test can skip instead of failing.
 pub(crate) fn compile_exec_probe() -> Option<std::path::PathBuf> {
-    let dir = std::path::Path::new("/tmp");
-    let source = dir.join("rust-openbsd-exec-probe.c");
-    let binary = dir.join("rust-openbsd-exec-probe");
+    let (source, binary) = probe_paths("rust-openbsd-exec-probe");
     std::fs::write(&source, EXEC_PROBE_SOURCE).expect("write probe source");
     let status = Command::new("cc")
         .args(["-std=c23", "-Wall", "-Wextra", "-Werror", "-static"])
@@ -181,9 +191,7 @@ main(int argc, char **argv)
 /// Returns `None` when the system C compiler is unavailable, so that the
 /// calling test can skip instead of failing.
 pub(crate) fn compile_empty_pledge_probe() -> Option<std::path::PathBuf> {
-    let dir = std::path::Path::new("/tmp");
-    let source = dir.join("rust-openbsd-empty-pledge-probe.c");
-    let binary = dir.join("rust-openbsd-empty-pledge-probe");
+    let (source, binary) = probe_paths("rust-openbsd-empty-pledge-probe");
     std::fs::write(&source, EMPTY_PLEDGE_PROBE_SOURCE).expect("write probe source");
     let status = Command::new("cc")
         .args(["-std=c23", "-Wall", "-Wextra", "-Werror"])
