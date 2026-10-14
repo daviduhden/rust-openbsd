@@ -10,7 +10,8 @@
 )]
 
 use crate::{
-    Errno,
+    DaemonOptions, Errno, MAX_ENTROPY, PASSWORD_LEN, PROCTITLE_MAX, Rtable, STDERR_FILENO,
+    STDIN_FILENO, STDOUT_FILENO, default_daemon_options,
     pledge::{PLEDGE_BUFFER_LEN, Promise, Promises, promises_from_str},
     privileges::{Account, Gid, LOGIN_NAME_MAX, PrivDropError, Uid},
     unveil::{Permission, Permissions, permissions_from_str},
@@ -152,4 +153,45 @@ fn account_name_length_is_enforced() {
     assert_eq!(account.uid(), Uid(2));
     assert_eq!(account.gid(), Gid(3));
     assert_eq!(account.name(), c"nobody");
+}
+
+/// Routing domain IDs are transparently wrapped but validated natively.
+#[test]
+fn rtable_identity() {
+    assert_eq!(Rtable::new(3).into_raw(), 3);
+    assert_eq!(Rtable::DEFAULT, Rtable(0));
+    assert!(Rtable::DEFAULT < Rtable::new(1));
+    assert_eq!(Rtable::default(), Rtable::DEFAULT);
+}
+
+/// Daemon options default to the documented positive behaviour.
+#[test]
+fn daemon_options_default() {
+    let options = DaemonOptions::default();
+    assert!(options.change_directory_to_root);
+    assert!(options.redirect_standard_streams);
+    assert_eq!(options, default_daemon_options());
+}
+
+/// Documented limits and descriptor numbers match the OpenBSD headers.
+#[test]
+fn documented_limits() {
+    assert_eq!(MAX_ENTROPY, 256);
+    assert_eq!(PASSWORD_LEN, 128);
+    assert_eq!(PROCTITLE_MAX, 2048);
+    assert_eq!((STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO), (0, 1, 2));
+}
+
+/// Every `ForkExecError` variant renders a distinguishable message.
+#[cfg(feature = "std")]
+#[test]
+fn fork_exec_error_display() {
+    use alloc::string::ToString;
+
+    let pledge = crate::ForkExecError::Pledge(Errno::EPERM).to_string();
+    assert!(pledge.contains("EPERM") || pledge.contains("not permitted"));
+    let spawn =
+        crate::ForkExecError::Spawn(std::io::Error::from_raw_os_error(Errno::ENOENT.into_raw()))
+            .to_string();
+    assert!(spawn.contains("spawn"));
 }

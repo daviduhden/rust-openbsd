@@ -12,9 +12,33 @@
 //!   [`setresgid(2)`](https://man.openbsd.org/setresgid.2) /
 //!   [`setresuid(2)`](https://man.openbsd.org/setresuid.2) sequence used by
 //!   OpenBSD base-system daemons ([`drop_privileges`]).
+//! * [`issetugid(2)`](https://man.openbsd.org/issetugid.2) and
+//!   [`getpeereid(3)`](https://man.openbsd.org/getpeereid.3) credential queries
+//!   ([`is_setugid`], [`get_peer_credentials`]).
+//! * [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3),
+//!   [`getprogname(3)`](https://man.openbsd.org/setprogname.3),
+//!   [`closefrom(2)`](https://man.openbsd.org/closefrom.2), and
+//!   [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), plus exec
+//!   under a pledge ceiling and daemonization ([`set_proctitle`], [`progname`],
+//!   [`close_from`], [`dtable_count`], [`exec_pledged`], [`daemonize`]).
+//! * The [`arc4random(3)`](https://man.openbsd.org/arc4random.3) family and
+//!   [`getentropy(2)`](https://man.openbsd.org/getentropy.2) ([`arc4_random`],
+//!   [`get_entropy`]).
+//! * Routing domains, [`getrtable(2)`](https://man.openbsd.org/getrtable.2) and
+//!   [`setrtable(2)`](https://man.openbsd.org/setrtable.2), via [`Rtable`].
+//! * [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2),
+//!   [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3),
+//!   [`freezero(3)`](https://man.openbsd.org/freezero.3),
+//!   [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), and
+//!   [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3)
+//!   ([`mimmutable`], [`explicit_bzero`], [`freezero`], [`timingsafe_bcmp`]).
+//! * [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3),
+//!   [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), and
+//!   [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3)
+//!   ([`crypt_checkpass`], [`crypt_newhash`], [`bcrypt_pbkdf`]).
 //!
 //! These mechanisms restrict *different dimensions* of process authority and
-//! are normally complementary: a typical OpenBSD daemon uses all of them.
+//! are normally complementary: a typical OpenBSD daemon uses several of them.
 //! They are not interchangeable.
 //!
 //! # OpenBSD only
@@ -187,23 +211,50 @@ extern crate std;
 mod cstr;
 mod ffi;
 
+pub mod authentication;
 pub mod chroot;
+pub mod credentials;
 pub mod error;
+pub mod memory;
 pub mod pledge;
 pub mod privileges;
+pub mod process;
+pub mod random;
+pub mod rtable;
 #[cfg(test)]
 mod tests;
 pub mod unveil;
 
 pub use crate::{
+    authentication::{PASSWORD_LEN, bcrypt_pbkdf_into, crypt_checkpass, crypt_newhash_into},
     chroot::{chdir, chroot, enter_chroot},
+    credentials::{get_peer_credentials, is_setugid},
     cstr::CStrHelper,
     error::Errno,
+    memory::{explicit_bzero, freezero, mimmutable, timingsafe_bcmp, timingsafe_memcmp},
     pledge::{Promise, Promises, pledge, pledge_both, pledge_child, pledge_parts, pledge_raw},
     privileges::{
         Account, Gid, GroupPolicy, Groups, NGROUPS_MAX, PrivDropError, PrivDropStep, Uid,
         account_by_name, drop_privileges, drop_privileges_to, drop_privileges_with, get_res_gid,
         get_res_uid, groups, init_groups, set_groups, set_res_gid, set_res_uid,
     },
+    process::{
+        DaemonOptions, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, close_from,
+        daemonize, daemonize_with, default_daemon_options, dtable_count, progname, reset_proctitle,
+        set_proctitle, set_progname,
+    },
+    random::{MAX_ENTROPY, arc4_random, arc4_random_buf, arc4_random_uniform, get_entropy},
+    rtable::{Rtable, get_rtable, set_rtable},
     unveil::{Permission, Permissions, lock_unveil, unveil, unveil_and_lock, unveil_paths},
 };
+
+/// Allocation-backed conveniences.
+#[cfg(feature = "alloc")]
+pub use crate::{
+    authentication::{bcrypt_pbkdf, crypt_newhash},
+    random::{arc4_random_bytes, get_entropy_bytes},
+};
+
+/// Process helpers that need [`std`].
+#[cfg(feature = "std")]
+pub use crate::process::{ForkExecError, exec_pledged, fork_exec, fork_exec_pledged};

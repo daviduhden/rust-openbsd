@@ -9,10 +9,16 @@ unique to [OpenBSD](https://www.openbsd.org/):
 | [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | which filesystem paths the process may access |
 | privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | the credentials (UID/GID/groups) of the process |
 | [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | the filesystem root for pathname resolution |
+| [`issetugid(2)`](https://man.openbsd.org/issetugid.2), [`getpeereid(3)`](https://man.openbsd.org/getpeereid.3) | [`credentials`](https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html) | set-ID execution taint; Unix-domain peer credentials |
+| [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3), exec, daemonization, [`closefrom(2)`](https://man.openbsd.org/closefrom.2) | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | process titles, exec under a pledge ceiling, descriptor hygiene |
+| [`arc4random(3)`](https://man.openbsd.org/arc4random.3), [`getentropy(2)`](https://man.openbsd.org/getentropy.2) | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | cryptographically strong random values; kernel entropy |
+| [`getrtable(2)`](https://man.openbsd.org/getrtable.2), [`setrtable(2)`](https://man.openbsd.org/setrtable.2) | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | routing domains |
+| [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3) | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | memory immutability, secure erasure, constant-time comparison |
+| [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3), [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3) | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | password hashing and key derivation |
 
 These mechanisms restrict *different dimensions* of process authority and are
-normally complementary: a typical OpenBSD daemon uses all of them. They are not
-interchangeable.
+normally complementary: a typical OpenBSD daemon uses several of them. They are
+not interchangeable.
 
 ## Scope
 
@@ -22,11 +28,13 @@ implementations, no fallback behavior, and no portability abstractions. The only
 exception is documentation builds (`cargo doc`, which sets `cfg(doc)`), so that
 the API can be rendered from any host.
 
-The crate provides the primitives needed to build a privilege-separated
-OpenBSD program. It is intentionally **not** a sandbox framework, daemon, or
-command-line tool, and it deliberately does not add a `fork`-based convenience
-API: the safe use of post-`fork(2)` state in a multi-threaded process cannot be
-guaranteed by a library.
+The crate provides OpenBSD-specific primitives; general POSIX functionality
+belongs to [`std`](https://doc.rust-lang.org/stable/std/) and is not rebound.
+It is intentionally **not** a sandbox framework, daemon, or command-line tool.
+Its single `fork`-based facility, [`daemonize`](https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html),
+documents the usual post-`fork(2)` hazards; the exec helpers use
+[`std::process::Command`](https://doc.rust-lang.org/stable/std/process/struct.Command.html)
+and never run caller code in the post-fork child.
 
 ## Supported OpenBSD versions
 
@@ -207,6 +215,7 @@ substitute for `pledge(2)`, `unveil(2)`, or privilege dropping.
 
 ```
 privileged initialization
+    -> set_process_title
     -> chroot
     -> unveil + lock
     -> initial pledge (still including "id" and, if needed, "getpw")
@@ -215,6 +224,95 @@ privileged initialization
     -> optional pledge_child for future execs
     -> service loop
 ```
+
+### Credentials
+
+```rust
+use rust_openbsd::{get_peer_credentials, is_setugid};
+
+// Was this image tainted by set-ID execution?
+let tainted = is_setugid();
+
+// Who is on the other end of a Unix-domain socket?
+let (uid, gid) = get_peer_credentials(fd)?;
+# Ok::<(), rust_openbsd::Errno>(())
+```
+
+`is_setugid` is not a UID/GID comparison and is not affected by later ID
+changes. `get_peer_credentials` is not covered by any pledge promise, so call it
+before pledging.
+
+### Random
+
+```rust
+use rust_openbsd::{arc4_random, arc4_random_bytes, arc4_random_uniform, get_entropy};
+
+let value = arc4_random();
+let bytes = arc4_random_bytes(32);
+let die = arc4_random_uniform(6);   // unbiased; prefer over `% 6`
+let mut entropy = [0_u8; 256];
+get_entropy(&mut entropy)?;         // getentropy(2), at most 256 bytes
+# Ok::<(), rust_openbsd::Errno>(())
+```
+
+### Routing domains
+
+```rust
+use rust_openbsd::{Rtable, get_rtable, set_rtable};
+
+let table = get_rtable()?;
+if table == Rtable::DEFAULT {
+    set_rtable(Rtable::new(0))?;
+}
+# Ok::<(), rust_openbsd::Errno>(())
+```
+
+### Memory
+
+```rust
+use rust_openbsd::{explicit_bzero, timingsafe_bcmp, timingsafe_memcmp};
+
+let mut secret = *b"hunter2";
+explicit_bzero(&mut secret);            // not optimized away
+
+let equal = timingsafe_bcmp(a, b);      // constant time, same length required
+let order = timingsafe_memcmp(a, b);    // constant time, tie-broken by length
+```
+
+`mimmutable` freezes a mapped region; `freezero` is `unsafe` because it takes
+ownership of a `malloc(3)` allocation.
+
+### Authentication
+
+```rust
+use rust_openbsd::{bcrypt_pbkdf, crypt_checkpass, crypt_newhash};
+
+let hash = crypt_newhash(&b"correct horse"[..], "bcrypt,4")?;
+assert!(crypt_checkpass(&b"correct horse"[..], hash.as_slice())?);
+
+let key = bcrypt_pbkdf(&b"password"[..], &b"salt"[..], /*rounds*/ 4, 32)?;
+# Ok::<(), rust_openbsd::Errno>(())
+```
+
+No cryptographic code lives in this crate; these call OpenBSD's implementations.
+Interior NUL bytes in password or hash inputs are rejected with `EINVAL` rather
+than silently truncating.
+
+### Process
+
+```rust
+use rust_openbsd::{close_from, dtable_count, set_proctitle};
+
+set_proctitle("mydaemon: serving")?;    // fixed "%s" format, title is data
+let open_descriptors = dtable_count();
+close_from(3);                          // descriptor-leak prevention
+# Ok::<(), rust_openbsd::Errno>(())
+```
+
+`exec_pledged` sets the execution promises and then replaces the image;
+`fork_exec_pledged` sets them and spawns, which caps every future exec of the
+caller (monotonic). `daemonize` detaches from the controlling terminal and
+carries the documented post-`fork(2)` hazards.
 
 ## Error semantics
 
@@ -239,8 +337,25 @@ privileged initialization
   descriptors keep access to resources outside the new root.
 * `unveil(2)` restrictions are process-wide and, once locked, cannot be changed.
 * Privilege dropping is irreversible. Treat any [`PrivDropError`] as fatal.
+* [`daemonize`](https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html)
+  runs a caller closure after a raw `fork(2)`; in a multithreaded process only
+  async-signal-safe operations are reliable in the child, so call it before
+  spawning threads or accept the documented risk.
+* [`timingsafe_bcmp`] and [`timingsafe_memcmp`] compare byte slices in constant
+  time, but comparing *different lengths* reveals the length; lengths are not
+  treated as secret.
 * This crate provides primitives, not a sandbox. Correctness depends on the
   caller performing the transitions in the documented order.
+
+## Feature gating
+
+The crate is `no_std` by default. The `alloc` feature adds the functions that
+return owned buffers ([`arc4_random_bytes`], [`get_entropy_bytes`],
+[`crypt_newhash`], [`bcrypt_pbkdf`]); the `std` feature (on by default, and
+implying `alloc`) adds the exec helpers that build on [`std::process::Command`]
+and the conversions between [`Errno`] and [`std::io::Error`]. Everything else,
+including the pledge, unveil, and privilege-dropping interfaces, works without
+either.
 
 ## Testing
 
@@ -313,3 +428,11 @@ represent the original upstream work as new.
 [`enter_chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.enter_chroot.html
 [`PrivDropError`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.PrivDropError.html
 [`Errno`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Errno.html
+[`timingsafe_bcmp`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.timingsafe_bcmp.html
+[`timingsafe_memcmp`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.timingsafe_memcmp.html
+[`arc4_random_bytes`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.arc4_random_bytes.html
+[`get_entropy_bytes`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.get_entropy_bytes.html
+[`crypt_newhash`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.crypt_newhash.html
+[`bcrypt_pbkdf`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.bcrypt_pbkdf.html
+[`std::process::Command`]: https://doc.rust-lang.org/stable/std/process/struct.Command.html
+[`std::io::Error`]: https://doc.rust-lang.org/stable/std/io/struct.Error.html

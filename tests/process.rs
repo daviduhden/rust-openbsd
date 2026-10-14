@@ -1,0 +1,139 @@
+//! Kernel tests for process titles, descriptor hygiene, and exec helpers.
+//!
+//! Tests that change process-wide state (the process title, the program name,
+//! the descriptor table, or the caller's execution promises) run in an isolated
+//! child process.
+
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    unsafe_code,
+    reason = "integration tests may use panicking assertions and raw libc calls"
+)]
+
+mod common;
+
+use common::{assert_sigabrt, assert_success, compile_exec_probe, exit_now, run_child};
+use rust_openbsd::{
+    Promise, Promises, close_from, dtable_count, exec_pledged, fork_exec, fork_exec_pledged,
+    progname, reset_proctitle, set_proctitle, set_progname,
+};
+
+// ---------------------------------------------------------------------------
+// Child processes.
+// ---------------------------------------------------------------------------
+
+/// The title, program name, and descriptor table are process-global.
+#[test]
+#[ignore = "isolated child process"]
+fn child_process_state() {
+    assert!(dtable_count() > 0, "no open descriptors");
+
+    assert!(set_proctitle("rust-openbsd-title").is_ok());
+    reset_proctitle();
+
+    set_progname(c"rust-openbsd-progname");
+    assert_eq!(progname(), c"rust-openbsd-progname");
+
+    // A high threshold closes nothing that the test harness uses.
+    close_from(10_000);
+    assert!(dtable_count() > 0, "the standard descriptors were closed");
+
+    exit_now(0);
+}
+
+/// `fork_exec_pledged` caps the caller's exec promises, so it must not run in
+/// the shared test process.
+#[test]
+#[ignore = "isolated child process"]
+fn child_fork_exec_pledged() {
+    let probe = compile_exec_probe().expect("probe compiled by the parent");
+    let mut command = std::process::Command::new(&probe);
+    let status = fork_exec_pledged(&Promises::new([Promise::Stdio]), &mut command)
+        .expect("fork_exec_pledged")
+        .wait()
+        .expect("wait");
+    assert!(status.success(), "pledged child failed: {status:?}");
+    exit_now(0);
+}
+
+/// `exec_pledged` replaces the image, so it must run in a child.
+#[test]
+#[ignore = "isolated child process"]
+fn child_exec_pledged() {
+    let probe = compile_exec_probe().expect("probe compiled by the parent");
+    let mut command = std::process::Command::new(&probe);
+    let error = exec_pledged(&Promises::new([Promise::Stdio]), &mut command);
+    panic!("exec_pledged returned: {error}");
+}
+
+/// The static probe aborts when the execution promises forbid its `open(2)`.
+#[test]
+#[ignore = "isolated child process"]
+fn child_exec_pledged_violation() {
+    let probe = compile_exec_probe().expect("probe compiled by the parent");
+    let mut command = std::process::Command::new(&probe);
+    let _ = command.arg("violate");
+    let error = exec_pledged(&Promises::new([Promise::Stdio]), &mut command);
+    panic!("exec_pledged returned: {error}");
+}
+
+// ---------------------------------------------------------------------------
+// Parent tests.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn process_state_is_queryable() {
+    assert_success(&run_child("child_process_state"));
+}
+
+#[test]
+fn fork_exec_pledged_execs_under_the_ceiling() {
+    if compile_exec_probe().is_none() {
+        println!("SKIP fork_exec_pledged: system C compiler unavailable");
+        return;
+    }
+    assert_success(&run_child("child_fork_exec_pledged"));
+}
+
+#[test]
+fn exec_pledged_replaces_the_image() {
+    if compile_exec_probe().is_none() {
+        println!("SKIP exec_pledged: system C compiler unavailable");
+        return;
+    }
+    assert_success(&run_child("child_exec_pledged"));
+}
+
+#[test]
+fn exec_pledged_enforces_the_ceiling() {
+    if compile_exec_probe().is_none() {
+        println!("SKIP exec_pledged: system C compiler unavailable");
+        return;
+    }
+    assert_sigabrt(&run_child("child_exec_pledged_violation"));
+}
+
+#[test]
+fn fork_exec_runs_a_child() {
+    let mut command = std::process::Command::new("/usr/bin/true");
+    let status = fork_exec(&mut command)
+        .expect("fork_exec")
+        .wait()
+        .expect("wait");
+    assert!(status.success());
+}
+
+#[test]
+fn dtable_count_reports_open_descriptors() {
+    assert!(dtable_count() > 0);
+}
+
+#[test]
+fn progname_is_available() {
+    assert_ne!(progname().to_bytes().len(), 0);
+}

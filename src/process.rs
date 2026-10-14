@@ -1,0 +1,419 @@
+//! Process titles, descriptor hygiene, exec, and daemonization.
+//!
+//! * [`set_proctitle`] and [`reset_proctitle`] wrap
+//!   [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3) without ever
+//!   letting a value become a format string.
+//! * [`progname`] and [`set_progname`] wrap
+//!   [`getprogname(3)`](https://man.openbsd.org/setprogname.3) and
+//!   [`setprogname(3)`](https://man.openbsd.org/setprogname.3).
+//! * [`close_from`] and [`dtable_count`] wrap
+//!   [`closefrom(2)`](https://man.openbsd.org/closefrom.2) and
+//!   [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2).
+//! * [`exec_pledged`], [`fork_exec`], and [`fork_exec_pledged`] combine
+//!   [`pledge(2)`](https://man.openbsd.org/pledge.2) execution promises with
+//!   [`execve(2)`](https://man.openbsd.org/execve.2).
+//! * [`daemonize`] and [`daemonize_with`] detach the process from its
+//!   controlling terminal.
+//!
+//! None of these performs any restriction by itself beyond a pledge policy
+//! explicitly requested here; combine them with [`mod@crate::pledge`],
+//! [`mod@crate::unveil`], [`mod@crate::chroot`], and [`crate::privileges`] as
+//! required.
+//!
+//! # Forking, exec, and pledge
+//!
+//! The supported model for creating a more restricted child process is to
+//! configure the *execution* promise ceiling in the parent and then exec:
+//!
+//! ```text
+//! pledge_child(child_promises)   (exec ceiling, set in the parent)
+//! fork + execve immediately      (the child does nothing else)
+//! the new image starts under child_promises
+//! ```
+//!
+//! OpenBSD copies the exec-promise state across
+//! [`fork(2)`](https://man.openbsd.org/fork.2) and applies it when a descendant
+//! executes a new image, so the child needs no pledge call of its own.
+//! [`fork_exec_pledged`] implements exactly this. The
+//! [`fork_exec`] and [`fork_exec_pledged`] helpers use a plain
+//! [`std::process::Command`], which forks and execs without running any of your
+//! code in the post-fork child.
+//!
+//! Setting exec promises in the parent is monotonic and affects every future
+//! exec from that process and its descendants: use it when those descendants
+//! share a common promise ceiling. Independent per-child policies require a
+//! fresh-process boundary.
+
+use core::{ffi::c_int, ptr};
+
+use crate::{cstr::CStrHelper, error::Errno, ffi};
+
+use core::ffi::CStr;
+
+#[cfg(feature = "std")]
+use crate::pledge::{Promises, pledge_child};
+
+/// Maximum length of a process title in bytes; longer titles are truncated by
+/// [`set_proctitle`], matching
+/// [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3).
+pub const PROCTITLE_MAX: usize = 2048;
+
+/// Standard input descriptor.
+pub const STDIN_FILENO: c_int = 0;
+/// Standard output descriptor.
+pub const STDOUT_FILENO: c_int = 1;
+/// Standard error descriptor.
+pub const STDERR_FILENO: c_int = 2;
+
+/// Sets the process title shown by
+/// [`ps(1)`](https://man.openbsd.org/ps.1), as `setproctitle("%s", title)`.
+///
+/// The title is passed purely as *data*: the fixed `"%s"` format string lives
+/// here, so a title containing format characters (for example `"%s %n %x"`)
+/// can never be interpreted as a format string. This is the secure idiom the
+/// OpenBSD manual page requires.
+///
+/// Titles longer than [`PROCTITLE_MAX`] bytes are truncated. The title is
+/// accepted through [`CStrHelper`], so it may be a byte slice, `str`, or
+/// `CStr`; an interior NUL byte is rejected with [`Errno::EINVAL`].
+///
+/// The operation is process-global. It works under the `stdio` pledge promise.
+///
+/// # Errors
+///
+/// Errors with [`Errno::EINVAL`] if the title contains an interior NUL byte.
+#[expect(
+    unsafe_code,
+    reason = "setproctitle(3) is variadic and takes a pointer"
+)]
+pub fn set_proctitle<P: CStrHelper>(title: P) -> Result<(), Errno> {
+    title.convert_then_apply(|title| {
+        // SAFETY:
+        // The format argument is the fixed literal "%s" (never caller data),
+        // and `title` is a valid, NUL-terminated string borrowed for the
+        // duration of the call. The native call only reads the data argument.
+        unsafe { ffi::setproctitle(c"%s".as_ptr(), title.as_ptr()) };
+        Ok(())
+    })
+}
+
+/// Resets the process title to just the program name, as
+/// `setproctitle(NULL)`.
+///
+/// # Pledge
+///
+/// Works under the `stdio` promise.
+#[expect(unsafe_code, reason = "setproctitle(3) is variadic")]
+#[inline]
+pub fn reset_proctitle() {
+    // SAFETY:
+    // A null format argument is the documented way to reset the title; no
+    // varargs are read.
+    unsafe { ffi::setproctitle(ptr::null()) };
+}
+
+/// Returns the stored program name, as
+/// [`getprogname(3)`](https://man.openbsd.org/setprogname.3).
+///
+/// The returned reference is valid for the lifetime of the process: the native
+/// program name is process-global and is only ever replaced by another
+/// long-lived name.
+#[expect(unsafe_code, reason = "getprogname(3) returns a raw pointer")]
+#[must_use]
+pub fn progname() -> &'static CStr {
+    let name = ffi::getprogname();
+    if name.is_null() {
+        return c"";
+    }
+    // SAFETY:
+    // `getprogname` returns either the process's `argv[0]` memory (live for the
+    // whole process) or the pointer previously stored by `setprogname` (which
+    // `set_progname` only accepts with a `'static` lifetime). It is therefore
+    // non-null and NUL-terminated here, and valid for `'static`.
+    unsafe { CStr::from_ptr(name) }
+}
+
+/// Sets the program name, as
+/// [`setprogname(3)`](https://man.openbsd.org/setprogname.3).
+///
+/// The stored name is used by `setproctitle(NULL)` ([`reset_proctitle`]) and by
+/// diagnostic messages; if the name contains a slash, the basename is used,
+/// matching the native behaviour.
+///
+/// The name must be `'static` because the native implementation stores the
+/// pointer rather than copying the string: passing a temporary would leave the
+/// process with a dangling program name.
+#[expect(unsafe_code, reason = "setprogname(3) takes a raw pointer")]
+#[inline]
+pub fn set_progname(name: &'static CStr) {
+    // SAFETY:
+    // `name` is a valid, NUL-terminated string that lives for the rest of the
+    // process (enforced by the `'static` bound). The native call only reads it,
+    // and stores the pointer in a process-global variable.
+    unsafe { ffi::setprogname(name.as_ptr()) };
+}
+
+/// Closes all file descriptors greater than or equal to `lowfd`, as
+/// [`closefrom(2)`](https://man.openbsd.org/closefrom.2).
+///
+/// This is the classic OpenBSD descriptor-leak prevention: daemons and
+/// privilege-separated programs call it around spawn/exec time, with the
+/// descriptors to keep reserved at the low numbers. The argument itself is
+/// closed too, as are any runtime-managed descriptors above it.
+///
+/// # Pledge
+///
+/// Allowed under the `stdio` promise.
+#[inline]
+pub fn close_from(lowfd: c_int) {
+    ffi::closefrom(lowfd);
+}
+
+/// Returns one more than the highest open file descriptor, as
+/// [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2).
+///
+/// Useful for auditing and for descriptor-hygiene checks around spawn and
+/// privilege-separation boundaries.
+///
+/// # Pledge
+///
+/// Allowed under the `stdio` promise.
+#[inline]
+#[must_use]
+pub fn dtable_count() -> c_int {
+    ffi::getdtablecount()
+}
+
+/// Replaces the current process image with the program described by `command`,
+/// starting it under the given execution promise ceiling, as
+/// [`execve(2)`](https://man.openbsd.org/execve.2).
+///
+/// This sets the *execution* promises with [`pledge_child`] and then calls
+/// [`exec`](std::os::unix::process::CommandExt::exec); the current image is not
+/// restricted by that call, and the new program starts with exactly `promises`.
+/// A successful exec never returns; on failure the returned
+/// [`std::io::Error`] carries the native error.
+///
+/// The usual way for a long-running process to finish by becoming a more
+/// tightly restricted program. An empty promise set is valid OpenBSD (the
+/// `_exit(2)`-only state) but no ordinary runtime can start under it.
+#[cfg(feature = "std")]
+pub fn exec_pledged(promises: &Promises, command: &mut std::process::Command) -> std::io::Error {
+    if let Err(errno) = pledge_child(promises) {
+        return std::io::Error::from_raw_os_error(errno.into_raw());
+    }
+    std::os::unix::process::CommandExt::exec(command)
+}
+
+/// Forks and execs the program described by `command`, returning the child
+/// handle on success, as
+/// [`fork(2)`](https://man.openbsd.org/fork.2) followed by
+/// [`execve(2)`](https://man.openbsd.org/execve.2).
+///
+/// This changes no pledge policy: any execution promises already configured in
+/// the parent apply to the child. If the calling process has pledged itself,
+/// its current promises must still allow `fork` and `execve` (generally `proc`
+/// and `exec`).
+///
+/// # Errors
+///
+/// Errors if spawning the child fails.
+#[cfg(feature = "std")]
+#[inline]
+pub fn fork_exec(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    command.spawn()
+}
+
+/// Sets the execution promise ceiling and then forks and execs `command`,
+/// returning the child handle on success.
+///
+/// The supported fork/exec architecture: the exec promises are configured in
+/// the parent *before* forking, and the child does nothing but reach exec, so
+/// the executed program begins pledged with exactly `promises`.
+///
+/// **Side effect:** this reduces the *caller's* execution promises, which is
+/// monotonic and cannot be widened later. Every future exec from the calling
+/// process and its descendants is then capped by `promises`, so use this only
+/// when those descendants share a common promise ceiling.
+///
+/// # Errors
+///
+/// Returns [`ForkExecError::Pledge`] if the execution promises cannot be set,
+/// or [`ForkExecError::Spawn`] if spawning the child fails.
+#[cfg(feature = "std")]
+pub fn fork_exec_pledged(
+    promises: &Promises,
+    command: &mut std::process::Command,
+) -> Result<std::process::Child, ForkExecError> {
+    pledge_child(promises).map_err(ForkExecError::Pledge)?;
+    command.spawn().map_err(ForkExecError::Spawn)
+}
+
+/// Error from [`fork_exec_pledged`].
+#[cfg(feature = "std")]
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ForkExecError {
+    /// The execution promise ceiling could not be set.
+    Pledge(Errno),
+    /// The child process could not be spawned.
+    Spawn(std::io::Error),
+}
+
+#[cfg(feature = "std")]
+impl core::fmt::Display for ForkExecError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Pledge(errno) => write!(f, "failed to set execution promises: {errno}"),
+            Self::Spawn(error) => write!(f, "failed to spawn the child process: {error}"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl core::error::Error for ForkExecError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Pledge(_) => None,
+            Self::Spawn(error) => Some(error),
+        }
+    }
+}
+
+/// Options controlling [`daemonize_with`]. The fields are named positively,
+/// unlike the inverted `nochdir`/`noclose` arguments of
+/// [`daemon(3)`](https://man.openbsd.org/daemon.3).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct DaemonOptions {
+    /// Whether to change the working directory to `/`.
+    ///
+    /// Leaving this `false` keeps the current directory, which can prevent an
+    /// unmount of the filesystem it lives on.
+    pub change_directory_to_root: bool,
+    /// Whether to redirect standard input, output, and error to `/dev/null`.
+    pub redirect_standard_streams: bool,
+}
+
+impl Default for DaemonOptions {
+    /// Returns [`default_daemon_options`].
+    #[inline]
+    fn default() -> Self {
+        default_daemon_options()
+    }
+}
+
+/// The default daemonization behaviour:
+/// [`DaemonOptions::change_directory_to_root`] and
+/// [`DaemonOptions::redirect_standard_streams`] both `true`.
+#[inline]
+#[must_use]
+pub const fn default_daemon_options() -> DaemonOptions {
+    DaemonOptions {
+        change_directory_to_root: true,
+        redirect_standard_streams: true,
+    }
+}
+
+/// Daemonizes `body` with the default [`DaemonOptions`].
+///
+/// See [`daemonize_with`].
+///
+/// # Correctness
+///
+/// This function does not return in the original process: the parent exits, and
+/// `body` runs in the detached child. The caller never observes failures that
+/// occur after the fork.
+#[inline]
+pub fn daemonize<F: FnOnce()>(body: F) {
+    daemonize_with(default_daemon_options(), body);
+}
+
+/// Detaches from the controlling terminal and runs `body` in the background, as
+/// [`daemon(3)`](https://man.openbsd.org/daemon.3).
+///
+/// The sequence is
+///
+/// ```text
+/// fork; parent _exit(0)
+/// child: setsid; chdir("/") if requested; redirect 0/1/2 to /dev/null if requested
+/// child: body()
+/// child: _exit(0)
+/// ```
+///
+/// and the original process exits immediately, exactly like `daemon(3)`.
+///
+/// # Correctness (read this before using it)
+///
+/// This is the one function in this crate that runs arbitrary caller code after
+/// a raw [`fork(2)`](https://man.openbsd.org/fork.2). In a multithreaded
+/// process the child only inherits the calling thread, and only
+/// async-signal-safe operations are reliable between `fork` and `exec`: locks
+/// held by other threads (including the allocator's) stay held in the child, so
+/// `body` may deadlock. Call this before spawning threads, or accept the
+/// documented risk. The Haskell reference implementation has the same
+/// restriction and documents it; Rust has no runtime-aware `fork` equivalent of
+/// `forkProcess`.
+///
+/// When standard streams are redirected, descriptors 0, 1, and 2 are assumed to
+/// be the standard streams; if the caller closed them and repurposed the
+/// numbers, the redirection clobbers whatever now occupies them (the same
+/// caveat as `daemon(3)`). Programs that have already reused those descriptors
+/// should pass [`DaemonOptions::redirect_standard_streams`] `false`.
+///
+/// Under pledge, this needs `proc` (fork, setsid), `rpath` (chdir), and
+/// `rpath`/`wpath` (opening `/dev/null`); the recommended order is to daemonize
+/// before pledging. Modern service supervision commonly expects foreground
+/// operation, so only call this when detachment is actually required.
+#[expect(unsafe_code, reason = "chdir(2) takes a raw pointer")]
+pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) {
+    let pid = ffi::fork();
+    if pid < 0 {
+        // The fork failed; stay in the original process rather than pretending
+        // to have detached.
+        return;
+    }
+    if pid > 0 {
+        // The original process exits without running the daemon body, exactly
+        // like daemon(3).
+        ffi::_exit(0);
+    }
+
+    let _session = ffi::setsid();
+    if options.change_directory_to_root {
+        // SAFETY:
+        // The path is a fixed, NUL-terminated literal; `chdir(2)` only reads
+        // it.
+        let _ = unsafe { ffi::chdir(c"/".as_ptr()) };
+    }
+    if options.redirect_standard_streams {
+        redirect_standard_streams_to_dev_null();
+    }
+
+    body();
+    ffi::_exit(0);
+}
+
+/// Redirects the three standard descriptors to `/dev/null`.
+#[expect(unsafe_code, reason = "open(2) takes a raw pointer")]
+fn redirect_standard_streams_to_dev_null() {
+    /// `O_RDWR` from OpenBSD's `<fcntl.h>`.
+    const O_RDWR: c_int = 0x0002;
+
+    // SAFETY:
+    // The path is a fixed, NUL-terminated literal and the call uses the
+    // two-argument form of `open(2)`, so no varargs are read.
+    let null_fd = unsafe { ffi::open(c"/dev/null".as_ptr(), O_RDWR) };
+    if null_fd < 0 {
+        return;
+    }
+    for target in [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO] {
+        let _ = ffi::dup2(null_fd, target);
+    }
+    if null_fd > STDERR_FILENO {
+        // SAFETY:
+        // `null_fd` was returned by `open(2)` above and is still owned by this
+        // function; closing it releases the duplicate that is no longer needed
+        // once descriptors 0-2 refer to `/dev/null`.
+        let _ = unsafe { ffi::close(null_fd) };
+    }
+}

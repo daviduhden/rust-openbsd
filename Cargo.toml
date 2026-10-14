@@ -16,7 +16,7 @@ repository = "https://github.com/daviduhden/rust-openbsd"
 # (the release ships Rust 1.94.1). 1.85.0 is the edition-2024 minimum and the
 # lowest toolchain that provides every language feature this crate uses.
 rust-version = "1.85.0"
-version = "0.1.0"
+version = "0.2.0"
 
 [lints.rust]
 # Every lint named below must be known to the toolchain shipped by OpenBSD 7.9
