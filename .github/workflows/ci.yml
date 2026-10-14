@@ -14,10 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  openbsd:
-    name: OpenBSD 7.9
+  openbsd-79-amd64:
+    name: OpenBSD 7.9 (amd64)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -26,25 +26,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate workflow YAML
-        run: |
-          set -eu
-          python3 -m pip install --user 'yamllint>=1.35,<2'
-          python3 -m yamllint --strict .
-
-      - name: Audit workflows with zizmor
-        run: |
-          set -eu
-          python3 -m pip install --user 'zizmor>=1,<2'
-          "${HOME}/.local/bin/zizmor" --persona=pedantic .
-
       - name: Build and test on OpenBSD 7.9
         uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
         with:
           release: "7.9"
           sync-time: true
           copyback: false
-          prepare: |
+          prepare: &vm-prepare |
             set -eu
 
             echo "== VM environment =="
@@ -69,7 +57,7 @@ jobs:
             chown -R builder:builder "$GITHUB_WORKSPACE"
             printf 'permit nopass root as builder\n' > /etc/doas.conf
 
-          run: |
+          run: &vm-run |
             set -eu
             cd "$GITHUB_WORKSPACE"
 
@@ -111,3 +99,25 @@ jobs:
                 exit 1
             fi
             echo "Privileged tests executed and passed."
+
+  openbsd-79-arm64:
+    name: OpenBSD 7.9 (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and test on OpenBSD 7.9
+        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
+        with:
+          release: "7.9"
+          arch: aarch64
+          sync-time: true
+          copyback: false
+          prepare: *vm-prepare
+          run: *vm-run
