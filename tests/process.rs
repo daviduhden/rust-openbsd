@@ -137,3 +137,20 @@ fn dtable_count_reports_open_descriptors() {
 fn progname_is_available() {
     assert_ne!(progname().to_bytes().len(), 0);
 }
+
+/// `getexecpath(3)` is available from OpenBSD 8.0; run with
+/// `cargo test --features openbsd-8-0` on 8.0 or later.
+#[cfg(feature = "openbsd-8-0")]
+#[test]
+fn execpath_reports_the_running_executable() {
+    let mut buf = [0_u8; rust_openbsd::PATH_MAX];
+    let len = rust_openbsd::get_execpath(&mut buf).expect("getexecpath");
+    assert!(len > 0, "empty executable path");
+
+    let text = std::str::from_utf8(buf.get(..len).unwrap_or_default()).expect("UTF-8 path");
+    assert!(text.starts_with('/'), "not an absolute path: {text}");
+    assert_eq!(
+        rust_openbsd::execpath().expect("execpath"),
+        std::path::PathBuf::from(text)
+    );
+}

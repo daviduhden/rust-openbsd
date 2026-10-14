@@ -21,6 +21,9 @@
 //!   [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), plus exec
 //!   under a pledge ceiling and daemonization ([`set_proctitle`], [`progname`],
 //!   [`close_from`], [`dtable_count`], [`exec_pledged`], [`daemonize`]).
+//! * [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3), the canonical
+//!   pathname of the running executable, via `get_execpath` (gated behind the
+//!   `openbsd-8-0` feature).
 //! * The [`arc4random(3)`](https://man.openbsd.org/arc4random.3) family and
 //!   [`getentropy(2)`](https://man.openbsd.org/getentropy.2) ([`arc4_random`],
 //!   [`get_entropy`]).
@@ -49,7 +52,10 @@
 //! Documentation builds (`cargo doc`, which sets `cfg(doc)`) are the only
 //! exception, so that the API can be documented from any host.
 //!
-//! The crate targets **OpenBSD 7.9** and **OpenBSD-current**.
+//! The crate targets **OpenBSD 7.9**, **OpenBSD 8.0**, and
+//! **OpenBSD-current**. Interfaces that first appeared in OpenBSD 8.0 are
+//! gated behind the [`openbsd-8-0`](#openbsd-8-0) Cargo feature so that the
+//! default build still works on 7.9.
 //!
 //! # The pledge promise model
 //!
@@ -189,6 +195,14 @@
 //! [`OsString`](std::ffi::OsString), [`Path`](std::path::Path), and
 //! [`PathBuf`](std::path::PathBuf), as well as conversions between [`Errno`]
 //! and [`std::io::Error`]. This is the default.
+//!
+//! ### `openbsd-8-0`
+//!
+//! Binds interfaces that first appeared in OpenBSD 8.0 (currently
+//! [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3), via
+//! `get_execpath`). Those symbols do not exist in OpenBSD 7.9's libc, so
+//! enabling this feature makes the crate require OpenBSD 8.0 or later. It is
+//! off by default; the 7.9-compatible surface is always available.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg = false))]
 #![no_std]
@@ -239,9 +253,9 @@ pub use crate::{
         get_res_uid, groups, init_groups, set_groups, set_res_gid, set_res_uid,
     },
     process::{
-        DaemonOptions, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, close_from,
-        daemonize, daemonize_with, default_daemon_options, dtable_count, progname, reset_proctitle,
-        set_proctitle, set_progname,
+        DaemonOptions, PATH_MAX, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
+        close_from, daemonize, daemonize_with, default_daemon_options, dtable_count, progname,
+        reset_proctitle, set_proctitle, set_progname,
     },
     random::{MAX_ENTROPY, arc4_random, arc4_random_buf, arc4_random_uniform, get_entropy},
     rtable::{Rtable, get_rtable, set_rtable},
@@ -258,3 +272,14 @@ pub use crate::{
 /// Process helpers that need [`std`].
 #[cfg(feature = "std")]
 pub use crate::process::{ForkExecError, exec_pledged, fork_exec, fork_exec_pledged};
+
+/// Interfaces that first appeared in OpenBSD 8.0.
+///
+/// The `openbsd-8-0` feature makes these symbols part of the link, so enabling
+/// it requires OpenBSD 8.0 or later.
+#[cfg(feature = "openbsd-8-0")]
+pub use crate::process::get_execpath;
+
+/// The [`PathBuf`](std::path::PathBuf) convenience for [`get_execpath`].
+#[cfg(all(feature = "openbsd-8-0", feature = "std"))]
+pub use crate::process::execpath;

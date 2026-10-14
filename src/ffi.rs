@@ -161,7 +161,7 @@ unsafe extern "C" {
     pub(crate) fn setprogname(name: *const c_char);
 
     /// [`closefrom(2)`](https://man.openbsd.org/closefrom.2).
-    pub(crate) safe fn closefrom(lowfd: c_int);
+    pub(crate) safe fn closefrom(lowfd: c_int) -> c_int;
 
     /// [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2).
     pub(crate) safe fn getdtablecount() -> c_int;
@@ -189,7 +189,11 @@ unsafe extern "C" {
     ) -> c_int;
 
     /// [`fork(2)`](https://man.openbsd.org/fork.2).
-    pub(crate) safe fn fork() -> c_int;
+    ///
+    /// Declared `unsafe` like the raw call: forking a multithreaded process and
+    /// running code in the child is only sound when the caller respects the
+    /// documented constraints, so the call site must acknowledge them.
+    pub(crate) fn fork() -> c_int;
 
     /// [`setsid(2)`](https://man.openbsd.org/setsid.2).
     pub(crate) safe fn setsid() -> c_int;
@@ -207,4 +211,11 @@ unsafe extern "C" {
 
     /// [`_exit(2)`](https://man.openbsd.org/_exit.2).
     pub(crate) safe fn _exit(status: c_int) -> !;
+
+    /// [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3).
+    ///
+    /// Only available on OpenBSD 8.0 and later; gated behind the
+    /// `openbsd-8-0` Cargo feature.
+    #[cfg(feature = "openbsd-8-0")]
+    pub(crate) fn getexecpath(buf: *mut c_char, bufsize: usize) -> c_int;
 }

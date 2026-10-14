@@ -179,6 +179,7 @@ fn documented_limits() {
     assert_eq!(MAX_ENTROPY, 256);
     assert_eq!(PASSWORD_LEN, 128);
     assert_eq!(PROCTITLE_MAX, 2048);
+    assert_eq!(crate::PATH_MAX, 1024);
     assert_eq!((STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO), (0, 1, 2));
 }
 

@@ -129,3 +129,8 @@ alloc = []
 
 # Provide std support.
 std = ["alloc"]
+
+# Bind interfaces that first appeared in OpenBSD 8.0. Enabling this feature
+# makes the crate require OpenBSD 8.0 or later, because the added symbols do
+# not exist in OpenBSD 7.9's libc.
+openbsd-8-0 = []

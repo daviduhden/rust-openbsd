@@ -22,6 +22,7 @@ other platforms.
 | [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3) | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | memory protection, secure erasure, constant-time comparison |
 | [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3), [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3) | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | password hashing and key derivation |
 | [`closefrom(2)`](https://man.openbsd.org/closefrom.2), [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), [`setprogname(3)`](https://man.openbsd.org/setprogname.3) | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | descriptor hygiene; program name |
+| [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3) *(OpenBSD 8.0)* | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | canonical pathname of the running executable |
 
 These mechanisms restrict *different dimensions* of process authority and are
 normally complementary: a typical OpenBSD daemon uses several of them. They are
@@ -548,6 +549,7 @@ command-line interface, and no unrelated functionality.
 | `daemon(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`daemonize`, documented fork hazards) |
 | fork/exec + execpromises | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`fork_exec`, `fork_exec_pledged`, `exec_pledged`) |
 | `closefrom(2)`, `getdtablecount(2)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported |
+| `getexecpath(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported behind the `openbsd-8-0` feature (first appeared in OpenBSD 8.0) |
 | `arc4random(3)` family | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported |
 | `getentropy(2)` | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported (native 256-byte limit) |
 | `getrtable(2)`/`setrtable(2)` | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | supported |
@@ -574,14 +576,21 @@ OpenBSD-current.
 
 ## Supported OpenBSD versions
 
-* Targets **OpenBSD 7.9** and **OpenBSD-current**.
+* Targets **OpenBSD 7.9**, **OpenBSD 8.0**, and **OpenBSD-current**.
+* Interfaces that first appeared in OpenBSD 8.0 are gated behind the
+  `openbsd-8-0` Cargo feature, so the default build keeps working on 7.9.
 * The [`Promise`] list was verified against the kernel's `pledgereq` table in
-  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c):
-  35 promises, `tmppath` removed, `disklabel`, `drm`, and `vmm` included.
-* Unveil permissions were verified against `sys/kern/kern_unveil.c`: `r`, `w`,
-  `x`, `c`, with the empty permission set valid.
+  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c)
+  (rev 1.369 on OpenBSD-current): 35 promises, `tmppath` removed and documented
+  as "no longer available", `disklabel`, `drm`, and `vmm` included; the list is
+  unchanged in 8.0.
+* Unveil permissions were verified against `sys/kern/kern_unveil.c` (rev 1.57):
+  `r`, `w`, `x`, `c`, with the empty permission set valid.
+* The [`Errno`] values were verified against `sys/sys/errno.h` (rev 1.25),
+  which is unchanged in 8.0: valid codes are `1..=95` (`EPROTO` is `ELAST`).
 * Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
-  `NGROUPS_MAX` (16); the password buffer size is `_PASSWORD_LEN` (128).
+  `NGROUPS_MAX` (16); the password buffer size is `_PASSWORD_LEN` (128), the
+  process-title limit is `MAX_PROCTITLE` (2048), and `PATH_MAX` is 1024.
 
 ### Language standards
 
@@ -602,6 +611,11 @@ return owned buffers; `std` (the default, and implying `alloc`) adds the exec
 helpers built on [`std::process::Command`] and the [`Errno`]/[`std::io::Error`]
 conversions. Everything else, including pledge, unveil, and privilege dropping,
 works without either.
+
+`openbsd-8-0` (off by default) adds the interfaces that first appeared in
+OpenBSD 8.0 — currently `getexecpath(3)` via [`get_execpath`] — whose symbols do
+not exist in 7.9's libc. Enabling it makes the crate require OpenBSD 8.0 or
+later.
 
 ## Testing
 
@@ -695,3 +709,4 @@ represent the original upstream work as new.
 [`DaemonOptions::redirect_standard_streams`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
 [`std::process::Command`]: https://doc.rust-lang.org/stable/std/process/struct.Command.html
 [`std::io::Error`]: https://doc.rust-lang.org/stable/std/io/struct.Error.html
+[`get_execpath`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.get_execpath.html

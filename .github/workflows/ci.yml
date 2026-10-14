@@ -67,13 +67,21 @@ jobs:
             export CARGO_TERM_COLOR=never
 
             cargo fmt --all -- --check
+            # Clippy only type-checks, so it can cover every feature, including
+            # `openbsd-8-0`, whose getexecpath(3) symbol does not exist in
+            # OpenBSD 7.9's libc and therefore must not be *linked* here.
             cargo clippy --all-targets --all-features -- -D warnings
-            cargo test --all-features -- --nocapture
+            # Linked test binaries run with the default feature set so that the
+            # OpenBSD 7.9 libc can resolve every symbol.
+            cargo test -- --nocapture
             cargo test
 
-            # Feature combinations, including no_std without allocation.
+            # Feature combinations, including no_std without allocation and the
+            # type-checked OpenBSD 8.0 surface.
             cargo build --no-default-features
             cargo build --no-default-features --features alloc
+            cargo build --features openbsd-8-0
+            cargo check --all-features
 
             cargo doc --no-deps --all-features
 
@@ -88,7 +96,7 @@ jobs:
             fi
 
             echo "== Privileged tests as root =="
-            if ! cargo test --all-features -- --nocapture > /tmp/openbsd-root.log 2>&1; then
+            if ! cargo test -- --nocapture > /tmp/openbsd-root.log 2>&1; then
                 cat /tmp/openbsd-root.log
                 echo "ERROR: privileged test run failed" >&2
                 exit 1

@@ -58,6 +58,10 @@ use crate::pledge::{Promises, pledge_child};
 /// [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3).
 pub const PROCTITLE_MAX: usize = 2048;
 
+/// `PATH_MAX` from OpenBSD's `<sys/syslimits.h>`: the maximum length of a
+/// pathname including its terminating NUL.
+pub const PATH_MAX: usize = 1024;
+
 /// Standard input descriptor.
 pub const STDIN_FILENO: c_int = 0;
 /// Standard output descriptor.
@@ -166,7 +170,7 @@ pub fn set_progname(name: &'static CStr) {
 /// Allowed under the `stdio` promise.
 #[inline]
 pub fn close_from(lowfd: c_int) {
-    ffi::closefrom(lowfd);
+    let _ = ffi::closefrom(lowfd);
 }
 
 /// Returns one more than the highest open file descriptor, as
@@ -366,7 +370,10 @@ pub fn daemonize<F: FnOnce()>(body: F) {
 /// operation, so only call this when detachment is actually required.
 #[expect(unsafe_code, reason = "chdir(2) takes a raw pointer")]
 pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) {
-    let pid = ffi::fork();
+    // SAFETY:
+    // `fork(2)` has no memory preconditions of its own; the constraints of
+    // running code in the child are documented on this function.
+    let pid = unsafe { ffi::fork() };
     if pid < 0 {
         // The fork failed; stay in the original process rather than pretending
         // to have detached.
@@ -416,4 +423,54 @@ fn redirect_standard_streams_to_dev_null() {
         // once descriptors 0-2 refer to `/dev/null`.
         let _ = unsafe { ffi::close(null_fd) };
     }
+}
+
+/// Returns the absolute pathname of the running ELF executable, as
+/// [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3).
+///
+/// The pathname is canonicalized in the same manner as
+/// [`realpath(3)`](https://man.openbsd.org/realpath.3). `buf` should be
+/// [`PATH_MAX`] bytes long; the returned length excludes the terminating NUL.
+///
+/// # Availability
+///
+/// `getexecpath(3)` first appeared in OpenBSD 8.0, so it is gated behind the
+/// `openbsd-8-0` Cargo feature. Enabling that feature makes the crate require
+/// OpenBSD 8.0 or later.
+///
+/// # Errors
+///
+/// Returns [`Errno::ENOENT`] when the executable pathname cannot be determined
+/// (for example when the process was started in a directory that is no longer
+/// linked to the filesystem), and [`Errno::ERANGE`] when `buf` is too small.
+#[cfg(feature = "openbsd-8-0")]
+#[expect(unsafe_code, reason = "getexecpath(3) writes through a pointer")]
+pub fn get_execpath(buf: &mut [u8]) -> Result<usize, Errno> {
+    let size = buf.len();
+    // SAFETY:
+    // `buf` is a live, writable slice and `size` is exactly its length, so the
+    // native call may write at most `size` bytes into it.
+    let code = unsafe { ffi::getexecpath(buf.as_mut_ptr().cast(), size) };
+    if code != ffi::SUCCESS {
+        return Err(Errno::last());
+    }
+    buf.iter().position(|&byte| byte == 0).ok_or(Errno::ERANGE)
+}
+
+/// Returns the absolute, canonicalized pathname of the running ELF executable
+/// as a [`PathBuf`](std::path::PathBuf).
+///
+/// See [`get_execpath`].
+///
+/// # Errors
+///
+/// See [`get_execpath`].
+#[cfg(all(feature = "openbsd-8-0", feature = "std"))]
+pub fn execpath() -> Result<std::path::PathBuf, Errno> {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    let mut buf = [0_u8; PATH_MAX];
+    let len = get_execpath(&mut buf)?;
+    let bytes = buf.get(..len).unwrap_or_default();
+    Ok(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
 }
