@@ -159,7 +159,7 @@ impl Promise {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Promise;
+    /// # use rust_openbsd::Promise;
     /// assert_eq!(Promise::ProtExec.name(), "prot_exec");
     /// ```
     #[inline]
@@ -212,7 +212,7 @@ impl Promise {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Promise;
+    /// # use rust_openbsd::Promise;
     /// assert_eq!(Promise::from_name("stdio"), Some(Promise::Stdio));
     /// assert_eq!(Promise::from_name("tmppath"), None);
     /// ```
@@ -306,7 +306,7 @@ pub(crate) const PLEDGE_BUFFER_LEN: usize = {
 /// # Examples
 ///
 /// ```
-/// # use openbsd_rust::{Promise, Promises};
+/// # use rust_openbsd::{Promise, Promises};
 /// let mut promises = Promises::new([Promise::Stdio, Promise::Rpath]);
 /// assert!(promises.contains(Promise::Rpath));
 /// promises.remove(Promise::Rpath);
@@ -333,7 +333,7 @@ impl Promises {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::{Promise, Promises};
+    /// # use rust_openbsd::{Promise, Promises};
     /// assert_eq!(Promises::new([Promise::Stdio, Promise::Stdio]).len(), 1);
     /// ```
     #[must_use]
@@ -384,7 +384,7 @@ impl Promises {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::{Promise, Promises};
+    /// # use rust_openbsd::{Promise, Promises};
     /// let mut promises = Promises::new([Promise::Rpath, Promise::Stdio]);
     /// promises.retain([Promise::Stdio]);
     /// assert!(promises.contains(Promise::Stdio));
@@ -478,7 +478,7 @@ impl Promises {
     /// # Examples
     ///
     /// ```no_run
-    /// # use openbsd_rust::{Promise, Promises};
+    /// # use rust_openbsd::{Promise, Promises};
     /// assert!(Promises::new([Promise::Stdio]).pledge().is_ok());
     /// ```
     #[inline]
@@ -612,7 +612,7 @@ fn encode_arg(promises: Option<&Promises>, buf: &mut [u8; PLEDGE_BUFFER_LEN]) ->
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{pledge_parts, Promise, Promises};
+/// # use rust_openbsd::{pledge_parts, Promise, Promises};
 /// // Leave the current promises alone but restrict future execs.
 /// assert!(pledge_parts(None, Some(&Promises::new([Promise::Stdio]))).is_ok());
 /// ```
@@ -649,7 +649,7 @@ pub fn pledge_parts(
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{pledge, Promise, Promises};
+/// # use rust_openbsd::{pledge, Promise, Promises};
 /// assert!(pledge(&Promises::new([Promise::Stdio])).is_ok());
 /// ```
 #[inline]
@@ -683,7 +683,7 @@ pub fn pledge(promises: &Promises) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{pledge_child, Promise, Promises};
+/// # use rust_openbsd::{pledge_child, Promise, Promises};
 /// assert!(pledge_child(&Promises::new([Promise::Stdio])).is_ok());
 /// ```
 #[inline]
@@ -705,7 +705,7 @@ pub fn pledge_child(execpromises: &Promises) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{pledge_both, Promise, Promises};
+/// # use rust_openbsd::{pledge_both, Promise, Promises};
 /// let current = Promises::new([Promise::Stdio, Promise::Proc, Promise::Exec]);
 /// let exec = Promises::new([Promise::Stdio]);
 /// assert!(pledge_both(&current, &exec).is_ok());
@@ -731,7 +731,7 @@ pub fn pledge_both(promises: &Promises, execpromises: &Promises) -> Result<(), E
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::pledge_raw;
+/// # use rust_openbsd::pledge_raw;
 /// assert!(pledge_raw(Some(c"stdio"), None).is_ok());
 /// ```
 #[expect(unsafe_code, reason = "pledge(2) takes raw pointers")]

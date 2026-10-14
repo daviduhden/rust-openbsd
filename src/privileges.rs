@@ -826,9 +826,9 @@ pub fn account_by_name<P: CStrHelper>(name: P) -> Result<Option<Account>, Errno>
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::drop_privileges;
+/// # use rust_openbsd::drop_privileges;
 /// drop_privileges("_mydaemon")?;
-/// # Ok::<(), openbsd_rust::PrivDropError>(())
+/// # Ok::<(), rust_openbsd::PrivDropError>(())
 /// ```
 #[inline]
 pub fn drop_privileges<P: CStrHelper>(name: P) -> Result<(), PrivDropError> {
@@ -845,9 +845,9 @@ pub fn drop_privileges<P: CStrHelper>(name: P) -> Result<(), PrivDropError> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{drop_privileges_with, GroupPolicy};
+/// # use rust_openbsd::{drop_privileges_with, GroupPolicy};
 /// drop_privileges_with(GroupPolicy::PrimaryGroupOnly, "_mydaemon")?;
-/// # Ok::<(), openbsd_rust::PrivDropError>(())
+/// # Ok::<(), rust_openbsd::PrivDropError>(())
 /// ```
 pub fn drop_privileges_with<P: CStrHelper>(
     policy: GroupPolicy,
@@ -894,7 +894,7 @@ pub fn drop_privileges_with<P: CStrHelper>(
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{account_by_name, drop_privileges_to, GroupPolicy};
+/// # use rust_openbsd::{account_by_name, drop_privileges_to, GroupPolicy};
 /// if let Some(account) = account_by_name("_mydaemon")? {
 ///     drop_privileges_to(GroupPolicy::PrimaryGroupOnly, account)?;
 /// }

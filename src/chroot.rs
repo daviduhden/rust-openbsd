@@ -51,7 +51,7 @@ fn chdir_raw(path: &CStr) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::chdir;
+/// # use rust_openbsd::chdir;
 /// assert!(chdir("/").is_ok());
 /// ```
 pub fn chdir<P: CStrHelper>(path: P) -> Result<(), Errno> {
@@ -73,7 +73,7 @@ pub fn chdir<P: CStrHelper>(path: P) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::chroot;
+/// # use rust_openbsd::chroot;
 /// assert!(chroot("/var/empty").is_ok());
 /// ```
 #[expect(unsafe_code, reason = "chroot(2) takes a raw pointer")]
@@ -108,7 +108,7 @@ pub fn chroot<P: CStrHelper>(path: P) -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::enter_chroot;
+/// # use rust_openbsd::enter_chroot;
 /// assert!(enter_chroot("/var/empty").is_ok());
 /// ```
 pub fn enter_chroot<P: CStrHelper>(path: P) -> Result<(), Errno> {

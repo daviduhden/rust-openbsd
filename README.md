@@ -5,10 +5,10 @@ unique to [OpenBSD](https://www.openbsd.org/):
 
 | Facility | Module | Restricts/provides |
 | --- | --- | --- |
-| [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](https://docs.rs/openbsd-rust/latest/openbsd_rust/pledge/index.html) | which system operations the process may perform |
-| [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/openbsd-rust/latest/openbsd_rust/unveil/index.html) | which filesystem paths the process may access |
-| privilege dropping | [`privileges`](https://docs.rs/openbsd-rust/latest/openbsd_rust/privileges/index.html) | the credentials (UID/GID/groups) of the process |
-| [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/openbsd-rust/latest/openbsd_rust/chroot/index.html) | the filesystem root for pathname resolution |
+| [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](https://docs.rs/rust-openbsd/latest/rust_openbsd/pledge/index.html) | which system operations the process may perform |
+| [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | which filesystem paths the process may access |
+| privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | the credentials (UID/GID/groups) of the process |
+| [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | the filesystem root for pathname resolution |
 
 These mechanisms restrict *different dimensions* of process authority and are
 normally complementary: a typical OpenBSD daemon uses all of them. They are not
@@ -40,19 +40,19 @@ guaranteed by a library.
 * Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
   `NGROUPS_MAX` (16).
 
-[`Promise`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Promise.html
+[`Promise`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
 
 ## Installation
 
 ```console
-cargo add openbsd-rust
+cargo add rust-openbsd
 ```
 
 or, in `Cargo.toml`:
 
 ```toml
 [dependencies]
-openbsd-rust = "0.1"
+rust-openbsd = "0.1"
 ```
 
 The crate has **no runtime dependencies**. `no_std` is supported with optional
@@ -67,11 +67,11 @@ that can only be reduced. The native call has two independent arguments —
 `promises` and `execpromises` — and both are exposed.
 
 ```rust
-use openbsd_rust::{pledge, Promise, Promises};
+use rust_openbsd::{pledge, Promise, Promises};
 
 let promises = Promises::new([Promise::Stdio, Promise::Rpath]);
 pledge(&promises)?;                        // pledge(promises, NULL)
-# Ok::<(), openbsd_rust::Errno>(())
+# Ok::<(), rust_openbsd::Errno>(())
 ```
 
 Calls are monotonic: a later call may only *reduce* the set, and an attempt to
@@ -84,7 +84,7 @@ promise changes that to `ENOSYS` and makes promise increases silently ignored.
 `execpromises` restrict programs started later with `execve(2)`:
 
 ```rust
-use openbsd_rust::{pledge_both, pledge_child, Promise, Promises};
+use rust_openbsd::{pledge_both, pledge_child, Promise, Promises};
 
 // Set both parts atomically: keep stdio/rpath/proc/exec now, and force any
 // future executed program to start with only stdio.
@@ -95,7 +95,7 @@ pledge_both(
 
 // Or restrict only future executions, leaving the current process alone.
 pledge_child(&Promises::new([Promise::Stdio]))?;
-# Ok::<(), openbsd_rust::Errno>(())
+# Ok::<(), rust_openbsd::Errno>(())
 ```
 
 Exec promises are inherited across `fork(2)`, so the recommended way to configure
@@ -122,7 +122,7 @@ known at runtime.
 ### `unveil(2)`
 
 ```rust
-use openbsd_rust::{unveil_and_lock, Permission, Permissions};
+use rust_openbsd::{unveil_and_lock, Permission, Permissions};
 
 let read = Permissions::READ;
 let read_write_create = Permissions::READ
@@ -134,7 +134,7 @@ unveil_and_lock([
     ("/var/www", read),
     ("/var/log/myapp", read_write_create),
 ])?;
-# Ok::<(), openbsd_rust::Errno>(())
+# Ok::<(), rust_openbsd::Errno>(())
 ```
 
 * [`unveil`] adds a single rule; [`unveil_paths`] adds several.
@@ -150,14 +150,14 @@ not as an error from this crate.
 ### Privilege dropping
 
 ```rust
-use openbsd_rust::{drop_privileges, GroupPolicy};
+use rust_openbsd::{drop_privileges, GroupPolicy};
 
 // Privileged initialization happens first (bind sockets, open logs, ...).
 drop_privileges("_mydaemon")?;                     // restrictive daemon policy
 
 // Or choose the login-style supplementary-group policy explicitly.
 drop_privileges_with(GroupPolicy::Initgroups, "_mydaemon")?;
-# Ok::<(), openbsd_rust::PrivDropError>(())
+# Ok::<(), rust_openbsd::PrivDropError>(())
 ```
 
 [`drop_privileges`] resolves the account and performs the sequence used by
@@ -192,10 +192,10 @@ privilege-restoration API.
 ### `chroot(2)`
 
 ```rust
-use openbsd_rust::enter_chroot;
+use rust_openbsd::enter_chroot;
 
 enter_chroot("/var/empty")?;   // chroot(path) followed by chdir("/")
-# Ok::<(), openbsd_rust::Errno>(())
+# Ok::<(), rust_openbsd::Errno>(())
 ```
 
 [`chroot`] is the raw call; [`enter_chroot`] performs `chroot(path)` then
@@ -291,21 +291,21 @@ treated as a behavioral specification.
 This is a fork, not an independent clean-room implementation, and it does not
 represent the original upstream work as new.
 
-[`Promise`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Promise.html
-[`Promises`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/struct.Promises.html
-[`pledge_child`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_child.html
-[`pledge_parts`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_parts.html
-[`pledge_raw`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.pledge_raw.html
-[`unveil`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil.html
-[`unveil_paths`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil_paths.html
-[`lock_unveil`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.lock_unveil.html
-[`unveil_and_lock`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.unveil_and_lock.html
-[`CStrHelper`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/trait.CStrHelper.html
-[`drop_privileges`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.drop_privileges.html
-[`drop_privileges_to`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.drop_privileges_to.html
-[`Account`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/struct.Account.html
-[`chroot`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.chroot.html
-[`chroot()`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.chroot.html
-[`enter_chroot`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/fn.enter_chroot.html
-[`PrivDropError`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.PrivDropError.html
-[`Errno`]: https://docs.rs/openbsd-rust/latest/openbsd_rust/enum.Errno.html
+[`Promise`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
+[`Promises`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Promises.html
+[`pledge_child`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_child.html
+[`pledge_parts`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_parts.html
+[`pledge_raw`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_raw.html
+[`unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil.html
+[`unveil_paths`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_paths.html
+[`lock_unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.lock_unveil.html
+[`unveil_and_lock`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_and_lock.html
+[`CStrHelper`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/trait.CStrHelper.html
+[`drop_privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges.html
+[`drop_privileges_to`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_to.html
+[`Account`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Account.html
+[`chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
+[`chroot()`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
+[`enter_chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.enter_chroot.html
+[`PrivDropError`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.PrivDropError.html
+[`Errno`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Errno.html

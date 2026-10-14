@@ -18,7 +18,7 @@
 mod common;
 
 use common::{assert_success, exit_now, is_root, run_child, skip_without_root};
-use openbsd_rust::{
+use rust_openbsd::{
     Errno, Gid, GroupPolicy, PrivDropError, Promise, Promises, Uid, account_by_name,
     drop_privileges, drop_privileges_to, drop_privileges_with, get_res_gid, get_res_uid, groups,
     pledge, set_res_gid, set_res_uid,
@@ -103,7 +103,7 @@ fn child_drop_privileges_to() {
 #[ignore = "isolated child process"]
 fn child_drop_unknown_account() {
     assert_eq!(
-        drop_privileges("openbsd-rust-no-such-user"),
+        drop_privileges("rust-openbsd-no-such-user"),
         Err(PrivDropError::NoSuchAccount)
     );
     exit_now(0);
@@ -170,7 +170,7 @@ fn account_resolution() {
     assert_eq!(root.uid(), Uid::ROOT);
     assert_eq!(root.name(), c"root");
     assert!(
-        account_by_name("openbsd-rust-no-such-user")
+        account_by_name("rust-openbsd-no-such-user")
             .expect("lookup unknown")
             .is_none()
     );

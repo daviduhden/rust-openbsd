@@ -14,10 +14,10 @@
 mod common;
 
 use common::{assert_success, exit_now, is_root, run_child, skip_without_root};
-use openbsd_rust::{Errno, account_by_name, chroot, enter_chroot, set_res_uid};
+use rust_openbsd::{Errno, account_by_name, chroot, enter_chroot, set_res_uid};
 
 /// Path to the temporary root used by the `enter_chroot` test.
-const CHROOT_DIR: &str = "/tmp/openbsd-rust-chroot-test";
+const CHROOT_DIR: &str = "/tmp/rust-openbsd-chroot-test";
 
 /// `chroot(2)` requires root; an unprivileged process gets `EPERM`.
 #[test]

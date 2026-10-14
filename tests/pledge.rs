@@ -21,7 +21,7 @@ mod common;
 use std::{os::unix::process::ExitStatusExt as _, process::Command};
 
 use common::{SIGABRT, assert_sigabrt, assert_signal, assert_success, exit_now, run_child};
-use openbsd_rust::{
+use rust_openbsd::{
     Errno, Promise, Promises, pledge, pledge_both, pledge_child, pledge_parts, pledge_raw,
 };
 

@@ -14,7 +14,7 @@
 mod common;
 
 use common::{assert_sigabrt, assert_success, exit_now, run_child};
-use openbsd_rust::{
+use rust_openbsd::{
     Errno, Permission, Permissions, Promise, Promises, lock_unveil, pledge, unveil, unveil_and_lock,
 };
 
@@ -30,7 +30,7 @@ fn child_read_only_enforcement() {
     assert_eq!(lock_unveil(), Ok(()));
     assert!(std::fs::read("/dev/null").is_ok(), "read should succeed");
     assert!(
-        std::fs::write("/tmp/openbsd-rust-forbidden", "x").is_err(),
+        std::fs::write("/tmp/rust-openbsd-forbidden", "x").is_err(),
         "write should be denied"
     );
     exit_now(0);
@@ -64,7 +64,7 @@ fn child_lock_is_irreversible() {
 #[ignore = "isolated child process"]
 fn child_missing_directory() {
     assert_eq!(
-        unveil("/openbsd-rust-no-such-dir/file", Permissions::READ),
+        unveil("/rust-openbsd-no-such-dir/file", Permissions::READ),
         Err(Errno::ENOENT)
     );
     exit_now(0);
@@ -77,7 +77,7 @@ fn child_non_utf8_path() {
     use std::os::unix::ffi::OsStrExt as _;
 
     let path =
-        std::path::Path::new("/tmp").join(std::ffi::OsStr::from_bytes(b"openbsd-rust-\xff-name"));
+        std::path::Path::new("/tmp").join(std::ffi::OsStr::from_bytes(b"rust-openbsd-\xff-name"));
     std::fs::write(&path, b"data").expect("create non-UTF-8 file");
     assert_eq!(unveil("/", Permissions::READ), Ok(()));
     assert_eq!(unveil(&path, Permissions::READ), Ok(()));
@@ -99,7 +99,7 @@ fn child_unveil_and_lock() {
         Ok(())
     );
     assert_eq!(unveil("/etc", Permissions::READ), Err(Errno::EPERM));
-    let file = "/tmp/openbsd-rust-unveil-write";
+    let file = "/tmp/rust-openbsd-unveil-write";
     std::fs::write(file, b"ok").expect("write under unveiled /tmp");
     std::fs::remove_file(file).expect("remove under unveiled /tmp");
     exit_now(0);

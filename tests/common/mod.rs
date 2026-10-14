@@ -45,7 +45,7 @@ unsafe extern "C" {
 
 /// Returns `true` if the current effective user is root.
 pub(crate) fn is_root() -> bool {
-    openbsd_rust::Uid::geteuid().is_root()
+    rust_openbsd::Uid::geteuid().is_root()
 }
 
 /// Re-runs the current test binary for a single ignored child test.
@@ -136,8 +136,8 @@ main(int argc, char **argv)
 /// statically, so that the calling test can skip instead of failing.
 pub(crate) fn compile_exec_probe() -> Option<std::path::PathBuf> {
     let dir = std::path::Path::new("/tmp");
-    let source = dir.join("openbsd-rust-exec-probe.c");
-    let binary = dir.join("openbsd-rust-exec-probe");
+    let source = dir.join("rust-openbsd-exec-probe.c");
+    let binary = dir.join("rust-openbsd-exec-probe");
     std::fs::write(&source, EXEC_PROBE_SOURCE).expect("write probe source");
     let status = Command::new("cc")
         .args(["-std=c23", "-Wall", "-Wextra", "-Werror", "-static"])

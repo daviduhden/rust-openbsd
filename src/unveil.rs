@@ -50,7 +50,7 @@ impl Permission {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Permission;
+    /// # use rust_openbsd::Permission;
     /// assert_eq!(Permission::Read.as_char(), 'r');
     /// ```
     #[inline]
@@ -97,7 +97,7 @@ impl Display for Permission {
 /// # Examples
 ///
 /// ```
-/// # use openbsd_rust::{Permission, Permissions};
+/// # use rust_openbsd::{Permission, Permissions};
 /// let permissions = Permissions::READ
 ///     .enable(Permission::Write)
 ///     .enable(Permission::Create);
@@ -276,7 +276,7 @@ impl Not for Permissions {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{unveil, Permissions};
+/// # use rust_openbsd::{unveil, Permissions};
 /// assert!(unveil("/etc/resolv.conf", Permissions::READ).is_ok());
 /// ```
 #[expect(unsafe_code, reason = "unveil(2) takes raw pointers")]
@@ -304,7 +304,7 @@ pub fn unveil<P: CStrHelper>(path: P, permissions: Permissions) -> Result<(), Er
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{unveil_paths, Permissions};
+/// # use rust_openbsd::{unveil_paths, Permissions};
 /// assert!(unveil_paths([("/", Permissions::READ), ("/tmp", Permissions::READ)]).is_ok());
 /// ```
 pub fn unveil_paths<P: CStrHelper>(
@@ -330,7 +330,7 @@ pub fn unveil_paths<P: CStrHelper>(
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::lock_unveil;
+/// # use rust_openbsd::lock_unveil;
 /// assert!(lock_unveil().is_ok());
 /// ```
 #[expect(unsafe_code, reason = "unveil(2) takes raw pointers")]
@@ -357,7 +357,7 @@ pub fn lock_unveil() -> Result<(), Errno> {
 /// # Examples
 ///
 /// ```no_run
-/// # use openbsd_rust::{unveil_and_lock, Permissions};
+/// # use rust_openbsd::{unveil_and_lock, Permissions};
 /// assert!(unveil_and_lock([("/", Permissions::ALL)]).is_ok());
 /// ```
 pub fn unveil_and_lock<P: CStrHelper>(

@@ -239,7 +239,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// assert_eq!(Errno::from_raw(1), Errno::EPERM);
     /// assert_eq!(Errno::from_raw(0), Errno::Other);
     /// ```
@@ -264,7 +264,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// assert_eq!(Errno::EPERM.into_raw(), 1);
     /// ```
     #[expect(clippy::as_conversions, reason = "`Self` is `repr(i32)`")]
@@ -289,7 +289,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// Errno::ENOENT.set();
     /// ```
     #[expect(unsafe_code, reason = "`errno` is a thread-local accessed through FFI")]
@@ -310,7 +310,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// Errno::EPERM.set();
     /// assert_eq!(Errno::last_raw(), Errno::EPERM.into_raw());
     /// ```
@@ -333,7 +333,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// Errno::ENOENT.set();
     /// assert_eq!(Errno::last(), Errno::ENOENT);
     /// ```
@@ -348,7 +348,7 @@ impl Errno {
     /// # Examples
     ///
     /// ```
-    /// # use openbsd_rust::Errno;
+    /// # use rust_openbsd::Errno;
     /// Errno::clear();
     /// assert_eq!(Errno::last().into_raw(), 0);
     /// ```

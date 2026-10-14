@@ -45,12 +45,12 @@
 //! empty-string distinction.
 //!
 //! ```no_run
-//! use openbsd_rust::{pledge, Promise, Promises};
+//! use rust_openbsd::{pledge, Promise, Promises};
 //!
 //! // Allow only the standard I/O and read-only path promises.
 //! let promises = Promises::new([Promise::Stdio, Promise::Rpath]);
 //! pledge(&promises)?;
-//! # Ok::<(), openbsd_rust::Errno>(())
+//! # Ok::<(), rust_openbsd::Errno>(())
 //! ```
 //!
 //! # Execution promises
@@ -62,7 +62,7 @@
 //! itself.
 //!
 //! ```no_run
-//! use openbsd_rust::{pledge_both, Promise, Promises};
+//! use rust_openbsd::{pledge_both, Promise, Promises};
 //!
 //! // The current process keeps the ability to execute and read paths; any
 //! // program it later execs starts with only "stdio".
@@ -70,7 +70,7 @@
 //!     &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
 //!     &Promises::new([Promise::Stdio]),
 //! )?;
-//! # Ok::<(), openbsd_rust::Errno>(())
+//! # Ok::<(), rust_openbsd::Errno>(())
 //! ```
 //!
 //! # The unveil model
@@ -82,7 +82,7 @@
 //! locked with [`lock_unveil`].
 //!
 //! ```no_run
-//! use openbsd_rust::{unveil_and_lock, Permission, Permissions};
+//! use rust_openbsd::{unveil_and_lock, Permission, Permissions};
 //!
 //! let read = Permissions::READ;
 //! let read_write_create = Permissions::READ
@@ -94,7 +94,7 @@
 //!     ("/var/www", read),
 //!     ("/var/log/myapp", read_write_create),
 //! ])?;
-//! # Ok::<(), openbsd_rust::Errno>(())
+//! # Ok::<(), rust_openbsd::Errno>(())
 //! ```
 //!
 //! # Privilege dropping
@@ -115,13 +115,13 @@
 //! process to regain it.
 //!
 //! ```no_run
-//! use openbsd_rust::drop_privileges;
+//! use rust_openbsd::drop_privileges;
 //!
 //! // Privileged initialization happens first (binding sockets, opening logs,
 //! // resolving the account, ...).
 //! drop_privileges(c"_mydaemon")?;
 //! // The process is irreversibly unprivileged from here on.
-//! # Ok::<(), openbsd_rust::PrivDropError>(())
+//! # Ok::<(), rust_openbsd::PrivDropError>(())
 //! ```
 //!
 //! # Recommended ordering
@@ -174,7 +174,7 @@
 // below is target-independent.
 #[cfg(all(not(target_os = "openbsd"), not(doc)))]
 compile_error!(
-    "openbsd-rust only supports OpenBSD: pledge(2), unveil(2), chroot(2) and the \
+    "rust-openbsd only supports OpenBSD: pledge(2), unveil(2), chroot(2) and the \
      privilege-dropping interfaces are OpenBSD-specific. Build with an OpenBSD \
      target such as x86_64-unknown-openbsd."
 );

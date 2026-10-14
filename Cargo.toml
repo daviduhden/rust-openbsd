@@ -5,13 +5,13 @@ authors = [
 ]
 categories = ["external-ffi-bindings", "no-std::no-alloc", "os::unix-apis"]
 description = "OpenBSD-only bindings for pledge(2), unveil(2), chroot(2), and daemon-style privilege dropping."
-documentation = "https://docs.rs/openbsd-rust/latest/openbsd_rust/"
+documentation = "https://docs.rs/rust-openbsd/latest/rust_openbsd/"
 edition = "2024"
 keywords = ["openbsd", "pledge", "unveil", "privsep", "security"]
 license = "MIT OR Apache-2.0"
-name = "openbsd-rust"
+name = "rust-openbsd"
 readme = "README.md"
-repository = "https://github.com/daviduhden/openbsd-rust"
+repository = "https://github.com/daviduhden/rust-openbsd"
 # Upstream `priv_sep` declared 1.97.0, which does not exist on OpenBSD 7.9
 # (the release ships Rust 1.94.1). 1.85.0 is the edition-2024 minimum and the
 # lowest toolchain that provides every language feature this crate uses.
@@ -19,6 +19,10 @@ rust-version = "1.85.0"
 version = "0.1.0"
 
 [lints.rust]
+# Every lint named below must be known to the toolchain shipped by OpenBSD 7.9
+# (Rust 1.94.1); `cargo clippy -D warnings` turns unknown lint names into
+# errors. `linker_info` and `clippy::inline_trait_bounds` exist only on newer
+# toolchains and are therefore not configured here.
 deprecated_safe = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
 keyword_idents = { level = "deny", priority = -1 }
@@ -38,7 +42,6 @@ deprecated_in_future = { level = "deny", priority = -1 }
 deref_into_dyn_supertrait = { level = "deny", priority = -1 }
 ffi_unwind_calls = { level = "deny", priority = -1 }
 impl_trait_redundant_captures = { level = "deny", priority = -1 }
-linker_info = { level = "deny", priority = -1 }
 macro_use_extern_crate = { level = "deny", priority = -1 }
 meta_variable_misuse = { level = "deny", priority = -1 }
 missing_copy_implementations = { level = "deny", priority = -1 }
@@ -94,7 +97,6 @@ doc_paragraphs_missing_punctuation = "allow"
 exhaustive_enums = "allow"
 exhaustive_structs = "allow"
 implicit_return = "allow"
-inline_trait_bounds = "allow"
 min_ident_chars = "allow"
 missing_trait_methods = "allow"
 module_name_repetitions = "allow"
