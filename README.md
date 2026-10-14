@@ -1,394 +1,640 @@
 # Rust OpenBSD
 
-Idiomatic, OpenBSD-only Rust bindings for the security facilities that are
-unique to [OpenBSD](https://www.openbsd.org/):
+Rust bindings for the security facilities that are unique to
+[OpenBSD](https://www.openbsd.org/), plus the privilege-separation practice
+common to OpenBSD daemons.
+
+The crate can only be built and used on OpenBSD; it fails at compile time on
+other platforms.
+
+## What's implemented
 
 | Facility | Module | Restricts/provides |
 | --- | --- | --- |
 | [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](https://docs.rs/rust-openbsd/latest/rust_openbsd/pledge/index.html) | which system operations the process may perform |
 | [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | which filesystem paths the process may access |
-| privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | the credentials (UID/GID/groups) of the process |
+| Privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | the credentials (UID/GID/groups) of the process |
 | [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | the filesystem root for pathname resolution |
 | [`issetugid(2)`](https://man.openbsd.org/issetugid.2), [`getpeereid(3)`](https://man.openbsd.org/getpeereid.3) | [`credentials`](https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html) | set-ID execution taint; Unix-domain peer credentials |
-| [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3), exec, daemonization, [`closefrom(2)`](https://man.openbsd.org/closefrom.2) | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | process titles, exec under a pledge ceiling, descriptor hygiene |
+| [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3), daemonization | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | process titles; background detachment |
 | [`arc4random(3)`](https://man.openbsd.org/arc4random.3), [`getentropy(2)`](https://man.openbsd.org/getentropy.2) | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | cryptographically strong random values; kernel entropy |
 | [`getrtable(2)`](https://man.openbsd.org/getrtable.2), [`setrtable(2)`](https://man.openbsd.org/setrtable.2) | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | routing domains |
-| [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3) | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | memory immutability, secure erasure, constant-time comparison |
+| [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3) | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | memory protection, secure erasure, constant-time comparison |
 | [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3), [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3) | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | password hashing and key derivation |
+| [`closefrom(2)`](https://man.openbsd.org/closefrom.2), [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), [`setprogname(3)`](https://man.openbsd.org/setprogname.3) | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | descriptor hygiene; program name |
 
 These mechanisms restrict *different dimensions* of process authority and are
 normally complementary: a typical OpenBSD daemon uses several of them. They are
 not interchangeable.
 
-## Scope
+## pledge
 
-This crate is deliberately **OpenBSD-only**. Building it for any other operating
-system fails with a clear compile-time error; there are no stub
-implementations, no fallback behavior, and no portability abstractions. The only
-exception is documentation builds (`cargo doc`, which sets `cfg(doc)`), so that
-the API can be rendered from any host.
-
-The crate provides OpenBSD-specific primitives; general POSIX functionality
-belongs to [`std`](https://doc.rust-lang.org/stable/std/) and is not rebound.
-It is intentionally **not** a sandbox framework, daemon, or command-line tool.
-Its single `fork`-based facility, [`daemonize`](https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html),
-documents the usual post-`fork(2)` hazards; the exec helpers use
-[`std::process::Command`](https://doc.rust-lang.org/stable/std/process/struct.Command.html)
-and never run caller code in the post-fork child.
-
-## Supported OpenBSD versions
-
-* Targets **OpenBSD 7.9** and **OpenBSD-current**.
-* The [`Promise`] list is verified against the kernel's `pledgereq` table in
-  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c)
-  (35 promises; `tmppath` removed; `disklabel`, `drm`, and `vmm` included).
-* Unveil permissions are verified against
-  [`sys/kern/kern_unveil.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_unveil.c):
-  `r`, `w`, `x`, `c`, with the empty permission set valid.
-* Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
-  `NGROUPS_MAX` (16).
-
-[`Promise`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
-
-## Installation
-
-```console
-cargo add rust-openbsd
-```
-
-or, in `Cargo.toml`:
-
-```toml
-[dependencies]
-rust-openbsd = "0.1"
-```
-
-The crate has **no runtime dependencies**. `no_std` is supported with optional
-`alloc` and `std` features (`std` is on by default).
-
-## API overview
-
-### `pledge(2)`
-
-[`Promise`] is the typed promise enumeration; [`Promises`] is a set of promises
-that can only be reduced. The native call has two independent arguments —
-`promises` and `execpromises` — and both are exposed.
+[`pledge(2)`](https://man.openbsd.org/pledge.2) partitions the POSIX feature set
+into subsystems called *promises*. After a `pledge()` call, using an operation
+outside the declared promises aborts the process with an uncatchable `SIGABRT`.
 
 ```rust
 use rust_openbsd::{pledge, Promise, Promises};
 
-let promises = Promises::new([Promise::Stdio, Promise::Rpath]);
-pledge(&promises)?;                        // pledge(promises, NULL)
-# Ok::<(), rust_openbsd::Errno>(())
+fn main() -> Result<(), rust_openbsd::Errno> {
+    // privileged initialization (bind sockets, open logs, ...)
+    pledge(&Promises::new([Promise::Stdio, Promise::Rpath, Promise::Inet, Promise::Dns]))?;
+    // main loop: any other operation now aborts the process
+    serve();
+    Ok(())
+}
+
+fn serve() {}
 ```
 
-Calls are monotonic: a later call may only *reduce* the set, and an attempt to
-increase it fails with `EPERM`. A `SIGABRT` (uncatchable) is raised if the
-process performs an operation outside the declared promises. The `error`
-promise changes that to `ENOSYS` and makes promise increases silently ignored.
+Calls are monotonic: a later call may only *reduce* the promise set. An attempt
+to increase it fails with [`Errno::EPERM`]. Once a promise has been removed it
+can never be regained.
 
-#### Execution promises
+### Exec promises
 
-`execpromises` restrict programs started later with `execve(2)`:
+The second argument of `pledge(2)` restricts programs executed later via
+`execve(2)`:
 
 ```rust
 use rust_openbsd::{pledge_both, pledge_child, Promise, Promises};
 
-// Set both parts atomically: keep stdio/rpath/proc/exec now, and force any
-// future executed program to start with only stdio.
-pledge_both(
-    &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
-    &Promises::new([Promise::Stdio]),
-)?;
+fn main() -> Result<(), rust_openbsd::Errno> {
+    // children may only use stdio; we keep stdio, rpath, proc and exec
+    pledge_both(
+        &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
+        &Promises::new([Promise::Stdio]),
+    )?;
 
-// Or restrict only future executions, leaving the current process alone.
-pledge_child(&Promises::new([Promise::Stdio]))?;
-# Ok::<(), rust_openbsd::Errno>(())
+    // or set the exec promises only, leaving the current process alone
+    pledge_child(&Promises::new([Promise::Stdio]))?;
+    Ok(())
+}
 ```
 
-Exec promises are inherited across `fork(2)`, so the recommended way to configure
-the policy of a fork/exec child is to call [`pledge_child`] in the parent before
-forking. When `execpromises` is left unset, restrictions do **not** automatically
-carry across `execve(2)`; the new image starts unpledged.
+A child that is started with exec promises in place runs pledged from its first
+instruction, unless the executed file has setuid/setgid bits, in which case
+execution is blocked with `EACCES`.
 
-#### `NULL` versus the empty string
+### `NULL` versus empty string
 
-[`pledge_parts`] is the full typed interface to
+`pledge_parts` is the full typed interface to
 `int pledge(const char *promises, const char *execpromises)`:
 
 | Argument | Value | Meaning |
 | --- | --- | --- |
-| `promises` | `None` | `NULL`: do not change the current promises |
-| `promises` | `Some(&Promises::NONE)` | `""`: restrict the process to `_exit(2)` only |
-| `promises` | `Some(set)` | set the current promises to `set` |
-| `execpromises` | `None` | `NULL`: do not change the exec promises |
-| `execpromises` | `Some(&Promises::NONE)` | `""`: future execs start with no promises |
+| `promises` | `None` | `NULL` — do not change this value |
+| `promises` | `Some(&Promises::NONE)` | `""` — restrict to `_exit(2)` only |
+| `promises` | `Some(set)` | set this value to `set` |
 
-[`pledge_raw`] exposes the raw `Option<&CStr>` form when the promise list is only
-known at runtime.
+The same table applies to `execpromises`. `pledge`, `pledge_child`, and
+`pledge_both` are conveniences over `pledge_parts`; `pledge_raw` exposes the raw
+`Option<&CStr>` form.
 
-### `unveil(2)`
+### Forking and pledge
+
+The supported model for a fork/exec child is to configure the exec-promise
+ceiling in the parent and then exec:
+
+```text
+parent
+    -> pledge_child(child_promises)     (exec ceiling, parent-side)
+    -> fork_dir + execve                (the child does nothing else)
+    -> the new image starts under child_promises
+```
+
+OpenBSD copies the exec-promise state across `fork(2)` and applies it when a
+descendant executes a new image, so the child needs no pledge call of its own.
+`fork_exec` and `fork_exec_pledged` implement exactly this pattern, and
+`exec_pledged` replaces the current image under an exec ceiling.
+
+Do not apply major current-process pledge reductions in a live multithreaded
+child. Reducing the current promise set to an extreme restriction (in
+particular [`pledge`] with an empty promise set, the `_exit(2)`-only state) makes
+the kernel unwind sibling runtime threads while cleaning up unveil state, and
+the resumed threads then perform syscalls forbidden by the fresh restriction, so
+the kernel aborts the process. The empty promise set is valid OpenBSD and is
+verified by a single-threaded native probe in the test suite.
+
+Setting exec promises in the parent is monotonic and affects every future exec
+from that process and its descendants: use it when those descendants share a
+common promise ceiling. Independent per-child policies require a fresh-process
+boundary (for example a minimal native launcher), which this crate does not
+provide.
+
+### Notes
+
+* The [`Promise::Error`] promise changes violations from aborting the process to
+  returning `ENOSYS`; promise increases are then silently ignored.
+* The `tmppath` promise has been removed from OpenBSD (`pledge(2)` returns
+  `EINVAL` for it) and is deliberately not exposed. Use `rpath`, `wpath`, and
+  `cpath` together with an `unveil` rule instead.
+* The [`Promise`] enumeration matches the promise list accepted by the kernel on
+  OpenBSD 7.9 and OpenBSD-current.
+
+## unveil
+
+[`unveil(2)`](https://man.openbsd.org/unveil.2) restricts the filesystem view of
+the process. The first call removes visibility of the entire filesystem except
+for explicitly unveiled paths.
 
 ```rust
 use rust_openbsd::{unveil_and_lock, Permission, Permissions};
 
-let read = Permissions::READ;
-let read_write_create = Permissions::READ
-    .enable(Permission::Write)
-    .enable(Permission::Create);
+fn main() -> Result<(), rust_openbsd::Errno> {
+    let read = Permissions::READ;
+    let read_write_create = Permissions::READ
+        .enable(Permission::Write)
+        .enable(Permission::Create);
 
-unveil_and_lock([
-    ("/", read),
-    ("/var/www", read),
-    ("/var/log/myapp", read_write_create),
-])?;
-# Ok::<(), rust_openbsd::Errno>(())
+    unveil_and_lock([
+        ("/", read),
+        ("/var/www", read),
+        ("/var/log/myapp", read_write_create),
+    ])?;
+    Ok(())
+}
 ```
 
-* [`unveil`] adds a single rule; [`unveil_paths`] adds several.
-* [`lock_unveil`] is `unveil(NULL, NULL)` and permanently locks the
-  configuration; [`unveil_and_lock`] installs rules and locks.
-* Paths are accepted through [`CStrHelper`], so they may be `Path`, `OsStr`,
-  `str`, or raw byte slices and need not be valid UTF-8. Interior NUL bytes are
-  rejected.
+* [`unveil`] adds a single rule.
+* [`unveil_paths`] adds several rules.
+* [`lock_unveil`] is `unveil(NULL, NULL)`: it permanently locks the
+  configuration. OpenBSD strongly recommends locking unveil once all rules are
+  installed; after locking, further `unveil` calls fail with `EPERM`.
+* [`unveil_and_lock`] installs the rules and locks.
 
-Denied access surfaces later as `EACCES`/`ENOENT` at the filesystem call site,
-not as an error from this crate.
+Permissions are `r`, `w`, `x`, `c` ([`Permission::Read`], [`Permission::Write`],
+[`Permission::Execute`], [`Permission::Create`]). The empty permission set is
+valid and unveils a path without permitting any operation on it. Paths are
+accepted through [`CStrHelper`], so they may be `Path`, `OsStr`, `str`, or raw
+byte slices and need not be valid UTF-8; interior NUL bytes are rejected.
 
-### Privilege dropping
+If the process is pledged, `unveil(2)` itself requires the `unveil` promise.
+Conversely, a `pledge(2)` call that removes all path-accessing promises destroys
+the unveil state.
+
+## Privilege dropping
+
+[`privileges`] implements the privilege-dropping sequence used by OpenBSD
+base-system daemons such as [`httpd(8)`](https://man.openbsd.org/httpd.8),
+[`unwind(8)`](https://man.openbsd.org/unwind.8), and
+[`smtpd(8)`](https://man.openbsd.org/smtpd.8):
+
+1. resolve the target account while still privileged;
+2. reduce supplementary groups while still privileged;
+3. drop the real, effective, and saved GIDs (`setresgid(2)`);
+4. drop the real, effective, and saved UIDs last (`setresuid(2)`).
+
+This ordering matters: `setgroups(2)` requires privilege, and once root is gone
+the saved IDs must not allow the process to regain it.
 
 ```rust
-use rust_openbsd::{drop_privileges, GroupPolicy};
+use rust_openbsd::drop_privileges;
 
-// Privileged initialization happens first (bind sockets, open logs, ...).
-drop_privileges("_mydaemon")?;                     // restrictive daemon policy
-
-// Or choose the login-style supplementary-group policy explicitly.
-drop_privileges_with(GroupPolicy::Initgroups, "_mydaemon")?;
-# Ok::<(), rust_openbsd::PrivDropError>(())
+fn main() -> Result<(), rust_openbsd::PrivDropError> {
+    // privileged initialization
+    drop_privileges("_mydaemon")?;
+    // irreversibly unprivileged from here on
+    Ok(())
+}
 ```
 
-[`drop_privileges`] resolves the account and performs the sequence used by
-OpenBSD base-system daemons:
+[`drop_privileges`] resolves the account to its UID and primary GID and drops all
+three UID and GID flavors to those values. By default it replaces the
+supplementary group list with *only* the primary GID (`setgroups(1, &gid)`),
+which is the restrictive daemon-style behaviour and never accidentally retains
+root's supplementary groups; this policy is [`GroupPolicy::PrimaryGroupOnly`].
 
-1. resolve the destination account while still privileged;
-2. set the supplementary groups while still privileged;
-3. [`setresgid(2)`](https://man.openbsd.org/setresgid.2) for the real, effective,
-   and saved GIDs;
-4. [`setresuid(2)`](https://man.openbsd.org/setresuid.2) for the real, effective,
-   and saved UIDs;
-5. verify the resulting credentials.
+[`drop_privileges_with`] takes an explicit [`GroupPolicy`]:
+[`GroupPolicy::Initgroups`] adopts all supplementary groups of the account via
+`initgroups(3)` instead; this is login-style behaviour for processes that
+genuinely need the account's group memberships. [`account_by_name`] resolves a
+user to an [`Account`], and [`drop_privileges_to`] applies either policy to an
+account resolved earlier, which is useful when the account must be looked up
+before `chroot(2)` hides the password database.
 
-The [`Account`] type stores the login name inline (bounded by `LOGIN_NAME_MAX`),
-so [`drop_privileges_to`] can resolve the account before, for example,
-[`chroot()`] makes the password database unreachable.
+After the drop, the library verifies that the real, effective, and saved
+UIDs/GIDs and the supplementary groups are the expected values and returns a
+[`PrivDropError`] naming the failing step otherwise; each step's error preserves
+the underlying [`Errno`] (typically `EPERM` if the process is not root). After a
+partial failure the process may already have reduced privileges, so callers must
+treat any error as fatal for the current process.
 
-Two supplementary-group policies are supported:
+### Why not `setusercontext(3)`?
 
-* `GroupPolicy::PrimaryGroupOnly` (the default): keep only the destination
-  primary GID — the restrictive daemon policy (`setgroups(1, &gid)`).
-* `GroupPolicy::Initgroups`: adopt the account's supplementary groups through
-  `initgroups(3)` — login-style behavior.
+`setusercontext(3)` applies a full login class from
+[`login.conf(5)`](https://man.openbsd.org/login.conf.5) (resource limits, umask,
+priority, environment, `initgroups(3)`, ...). OpenBSD uses it in login programs
+such as [`login(1)`](https://man.openbsd.org/login.1) and
+[`su(1)`](https://man.openbsd.org/su.1); native daemons deliberately do not use
+it for privilege separation — they perform the explicit sequence above. This
+crate therefore binds the explicit sequence and leaves login-session management
+to `setusercontext(3)` users.
 
-A failed step returns a [`PrivDropError`] that identifies the failing operation
-and preserves the underlying [`Errno`]. **Credential changes are not
-reversible**: after a partial failure the process may already have reduced
-privileges and must not continue normal service execution. The library never
-pretends that a failed drop restored the original identity and provides no
-privilege-restoration API.
+## Interaction between pledge and privilege dropping
 
-### `chroot(2)`
+The `id` pledge promise covers the identity-changing calls (`setuid`, `seteuid`,
+`setreuid`, `setresuid`, `setgid`, `setegid`, `setregid`, `setresgid`,
+`setgroups`), and the `getpw` promise is needed to resolve account names. An
+application that pledges before dropping privileges must keep `id` (and `getpw`
+for name resolution) until the drop is complete, then pledge again without them:
+
+```text
+start privileged
+    |
+    +-- perform privileged initialization
+    |
+    +-- pledge including "id" if pledge is already enabled
+    |
+    +-- drop privileges
+    |
+    +-- pledge again without "id"
+    |
+    +-- continue as unprivileged process
+```
+
+```rust
+use rust_openbsd::{drop_privileges, pledge, Promise, Promises};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    pledge(&Promises::new([
+        Promise::Stdio,
+        Promise::Rpath,
+        Promise::Getpw,
+        Promise::Id,
+    ]))?;
+    drop_privileges("_mydaemon")?;
+    pledge(&Promises::new([Promise::Stdio, Promise::Rpath]))?;
+    Ok(())
+}
+```
+
+This crate never adds promises behind the application's back.
+
+## Complete example
+
+A daemon combining all three mechanisms:
+
+```rust
+use rust_openbsd::{
+    drop_privileges, pledge, unveil_and_lock, Permission, Permissions, Promise, Promises,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. privileged initialization: bind port 80, open log files,
+    //    parse configuration, resolve the target account
+
+    // 2. restrict the filesystem view
+    unveil_and_lock([
+        ("/", Permissions::READ.enable(Permission::Execute)),
+        ("/var/www", Permissions::READ),
+        (
+            "/var/log/myapp",
+            Permissions::READ
+                .enable(Permission::Write)
+                .enable(Permission::Create),
+        ),
+    ])?;
+
+    // 3. restrict system calls, keeping what the drop still needs
+    pledge(&Promises::new([
+        Promise::Stdio,
+        Promise::Rpath,
+        Promise::Inet,
+        Promise::Unix,
+        Promise::Getpw,
+        Promise::Id,
+    ]))?;
+
+    // 4. drop credentials irreversibly
+    drop_privileges("_mydaemon")?;
+
+    // 5. remove the identity-changing promises
+    pledge(&Promises::new([
+        Promise::Stdio,
+        Promise::Rpath,
+        Promise::Inet,
+        Promise::Unix,
+    ]))?;
+
+    // 6. main service loop
+    serve();
+    Ok(())
+}
+
+fn serve() {}
+```
+
+## Errors
+
+* Failing `pledge(2)`, `unveil(2)`, `chroot(2)`, and `rtable` calls return
+  [`Errno`], the error reported by the kernel (`EPERM`, `EINVAL`, `ENOENT`, ...).
+* `pledge(2)` violations do not return an error: the kernel aborts the process
+  with an uncatchable `SIGABRT` unless the `error` promise is active.
+* `unveil(2)` denials surface later as `EACCES`/`ENOENT` errors at the filesystem
+  call site.
+* Strings and byte strings that cross the FFI boundary must not contain embedded
+  `NUL` bytes; the library rejects them explicitly instead of letting C string
+  conversion truncate them.
+* With the `std` feature, [`Errno`] converts to and from [`std::io::Error`].
+
+## chroot
+
+[`chroot`] binds `chroot(2)`:
 
 ```rust
 use rust_openbsd::enter_chroot;
 
-enter_chroot("/var/empty")?;   // chroot(path) followed by chdir("/")
-# Ok::<(), rust_openbsd::Errno>(())
+fn main() -> Result<(), rust_openbsd::Errno> {
+    enter_chroot("/var/empty")?;   // chroot(path) followed by chdir("/")
+    Ok(())
+}
 ```
 
-[`chroot`] is the raw call; [`enter_chroot`] performs `chroot(path)` then
-`chdir("/")` to close the classic `".."` escape. `chroot(2)` requires root, is
-not covered by any pledge promise (do it *before* pledging), and is not a
-substitute for `pledge(2)`, `unveil(2)`, or privilege dropping.
+* [`chroot`] is the exact native call: it changes pathname resolution but does
+  not change the working directory.
+* [`enter_chroot`] performs `chroot(path)` then `chdir("/")` as one fail-closed
+  transition — the recommended security-sensitive form.
 
-### Recommended order
-
-```
-privileged initialization
-    -> set_process_title
-    -> chroot
-    -> unveil + lock
-    -> initial pledge (still including "id" and, if needed, "getpw")
-    -> drop privileges
-    -> final pledge (without "id")
-    -> optional pledge_child for future execs
-    -> service loop
-```
-
-### Credentials
-
-```rust
-use rust_openbsd::{get_peer_credentials, is_setugid};
-
-// Was this image tainted by set-ID execution?
-let tainted = is_setugid();
-
-// Who is on the other end of a Unix-domain socket?
-let (uid, gid) = get_peer_credentials(fd)?;
-# Ok::<(), rust_openbsd::Errno>(())
-```
-
-`is_setugid` is not a UID/GID comparison and is not affected by later ID
-changes. `get_peer_credentials` is not covered by any pledge promise, so call it
+`chroot(2)` is not a complete sandbox: it requires root, does not replace
+pledge/unveil/privilege dropping, cannot confine an already-root process
+reliably, and open descriptors keep access to resources outside the new root. It
+is not permitted at all once the process has called `pledge(2)`, so chroot
 before pledging.
 
-### Random
+## Credentials
+
+[`credentials`] provides two credential queries:
+
+```rust
+use std::os::fd::AsRawFd;
+
+use rust_openbsd::{get_peer_credentials, is_setugid};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let tainted = is_setugid(); // issetugid(2)
+
+    let (client, _server) = std::os::unix::net::UnixStream::pair()?;
+    let (uid, gid) = get_peer_credentials(client.as_raw_fd())?; // getpeereid(3)
+    let _ = (tainted, uid, gid);
+    Ok(())
+}
+```
+
+`is_setugid` reports whether the process image was tainted by set-ID execution
+(or by exec while real/effective/saved IDs were mismatched). It is not a UID/GID
+comparison and is not affected by later ID changes.
+
+`get_peer_credentials` returns the effective UID and GID of the peer of a
+connected Unix-domain `SOCK_STREAM`/`SOCK_SEQPACKET` socket. It supplies facts
+for an authorization decision; it is not authentication by itself. Like `chroot`,
+it is not covered by any pledge promise and must be used before pledging.
+
+## Process titles and daemonization
+
+[`process`]:
+
+```rust
+use rust_openbsd::{close_from, dtable_count, reset_proctitle, set_proctitle};
+
+fn main() -> Result<(), rust_openbsd::Errno> {
+    set_proctitle("mydaemon: serving")?; // setproctitle("%s", title)
+    reset_proctitle(); // setproctitle(NULL)
+    let open_descriptors = dtable_count(); // getdtablecount(2)
+    close_from(3); // closefrom(2)
+    let _ = open_descriptors;
+    Ok(())
+}
+```
+
+Titles are passed to `setproctitle(3)` only as data through a fixed `"%s"`
+format literal, so user-controlled strings can never become format strings.
+Titles are limited to [`PROCTITLE_MAX`] bytes and work under the `stdio` promise.
+
+`set_progname` and `progname` expose `setprogname(3)`/`getprogname(3)`; the name
+is stored by pointer by the native implementation, so `set_progname` requires a
+`'static` reference.
+
+`exec_pledged` sets the execution promises and then replaces the current image;
+`fork_exec` and `fork_exec_pledged` spawn a child, the latter after setting the
+promise ceiling in the parent. These build on [`std::process::Command`] and never
+run caller code in the post-fork child.
+
+`daemonize` and `daemonize_with` detach from the controlling terminal, taking
+[`DaemonOptions`] with positively named fields
+([`DaemonOptions::change_directory_to_root`],
+[`DaemonOptions::redirect_standard_streams`]) instead of the inverted
+`nochdir`/`noclose` integers of `daemon(3)`. Daemonization is explicit and never
+automatic: foreground operation (preferred under modern service supervision such
+as rc.d) is fully supported. This is the one raw-`fork(2)` facility in the
+crate, and it documents the usual post-fork hazards: in a multithreaded process
+only async-signal-safe operations are reliable in the child.
+
+## Random
+
+[`random`] binds the `arc4random(3)` family:
 
 ```rust
 use rust_openbsd::{arc4_random, arc4_random_bytes, arc4_random_uniform, get_entropy};
 
-let value = arc4_random();
-let bytes = arc4_random_bytes(32);
-let die = arc4_random_uniform(6);   // unbiased; prefer over `% 6`
-let mut entropy = [0_u8; 256];
-get_entropy(&mut entropy)?;         // getentropy(2), at most 256 bytes
-# Ok::<(), rust_openbsd::Errno>(())
+fn main() -> Result<(), rust_openbsd::Errno> {
+    let value = arc4_random(); // arc4random()
+    let bytes = arc4_random_bytes(32); // arc4random_buf()
+    let die = arc4_random_uniform(6); // arc4random_uniform(6)
+    let mut entropy = [0u8; 256];
+    get_entropy(&mut entropy)?; // getentropy(2), at most 256 bytes
+    let _ = (value, bytes, die, entropy);
+    Ok(())
+}
 ```
 
-### Routing domains
+Prefer [`arc4_random_uniform`] over `arc4_random() % n`: the native function
+avoids modulo bias when the bound is not a power of two. The API name is
+historical; the implementation is ChaCha20-based and re-seeded from
+`getentropy(2)`. It works inside `chroot(2)` and under the `stdio` pledge
+promise.
+
+## Routing domains
+
+[`rtable`] exposes OpenBSD routing domains, which isolate the routing state of a
+process:
 
 ```rust
 use rust_openbsd::{Rtable, get_rtable, set_rtable};
 
-let table = get_rtable()?;
-if table == Rtable::DEFAULT {
-    set_rtable(Rtable::new(0))?;
+fn main() -> Result<(), rust_openbsd::Errno> {
+    let current = get_rtable()?;
+    if current == Rtable::DEFAULT {
+        set_rtable(Rtable::new(0))?;
+    }
+    Ok(())
 }
-# Ok::<(), rust_openbsd::Errno>(())
 ```
 
-### Memory
+Reading the domain is allowed under the `stdio` promise; changing it requires
+the `id` promise and, once the domain is non-zero, superuser privileges. These
+are process-wide settings but not monotonic restrictions.
+
+## Memory
+
+[`memory`] provides the memory-handling extensions:
 
 ```rust
 use rust_openbsd::{explicit_bzero, timingsafe_bcmp, timingsafe_memcmp};
 
-let mut secret = *b"hunter2";
-explicit_bzero(&mut secret);            // not optimized away
+fn main() {
+    let mut secret = *b"hunter2";
+    explicit_bzero(&mut secret); // explicit_bzero(3), not optimized away
 
-let equal = timingsafe_bcmp(a, b);      // constant time, same length required
-let order = timingsafe_memcmp(a, b);    // constant time, tie-broken by length
+    let equal = timingsafe_bcmp(b"hash-a", b"hash-b"); // constant-time equality
+    let order = timingsafe_memcmp(b"hash-a", b"hash-b"); // constant-time ordering
+    let _ = (equal, order);
+}
 ```
 
-`mimmutable` freezes a mapped region; `freezero` is `unsafe` because it takes
-ownership of a `malloc(3)` allocation.
+[`mimmutable`] permanently forbids future changes to the protection or mapping
+of a memory region. [`freezero`] zeroes and releases a `malloc(3)` allocation and
+is `unsafe` because ownership transfers to it. The constant-time comparisons are
+the recommended interfaces for comparing secrets such as hashes and MACs; do not
+reimplement them with an early-exiting comparison.
 
-### Authentication
+## Authentication
+
+[`authentication`] binds OpenBSD's password-hashing facilities:
 
 ```rust
 use rust_openbsd::{bcrypt_pbkdf, crypt_checkpass, crypt_newhash};
 
-let hash = crypt_newhash(&b"correct horse"[..], "bcrypt,4")?;
-assert!(crypt_checkpass(&b"correct horse"[..], hash.as_slice())?);
+fn main() -> Result<(), rust_openbsd::Errno> {
+    let hash = crypt_newhash(&b"correct horse"[..], "bcrypt,4")?;
+    assert!(crypt_checkpass(&b"correct horse"[..], hash.as_slice())?);
 
-let key = bcrypt_pbkdf(&b"password"[..], &b"salt"[..], /*rounds*/ 4, 32)?;
-# Ok::<(), rust_openbsd::Errno>(())
+    let key = bcrypt_pbkdf(&b"password"[..], &b"salt"[..], /*rounds*/ 4, 32)?;
+    let _ = key;
+    Ok(())
+}
 ```
 
-No cryptographic code lives in this crate; these call OpenBSD's implementations.
-Interior NUL bytes in password or hash inputs are rejected with `EINVAL` rather
-than silently truncating.
+These call OpenBSD's implementations directly; no cryptographic code lives in
+this crate. Passwords and hashes are passed as byte slices and are never logged
+or embedded in error values; embedded `NUL` bytes are rejected rather than
+silently truncated. Two unavoidable limitations of a managed runtime apply:
+password buffers cannot be guaranteed to be erased in place (use
+[`explicit_bzero`] on explicit native buffers if that matters), and the
+comparison itself is performed by the native constant-time implementation.
 
-### Process
+## Scope
 
-```rust
-use rust_openbsd::{close_from, dtable_count, set_proctitle};
+`rust-openbsd` provides Rust interfaces to useful OpenBSD-specific system and
+library facilities that are not covered by the Rust standard library. General
+POSIX functionality remains the responsibility of
+[`std`](https://doc.rust-lang.org/stable/std/) and is reused rather than
+rebound. See the coverage table below for the audited API surface and the
+precise reasons behind deferred facilities.
 
-set_proctitle("mydaemon: serving")?;    // fixed "%s" format, title is data
-let open_descriptors = dtable_count();
-close_from(3);                          // descriptor-leak prevention
-# Ok::<(), rust_openbsd::Errno>(())
-```
+The crate is a set of primitives, not a framework: it introduces no daemon, no
+command-line interface, and no unrelated functionality.
 
-`exec_pledged` sets the execution promises and then replaces the image;
-`fork_exec_pledged` sets them and spawns, which caps every future exec of the
-caller (monotonic). `daemonize` detaches from the controlling terminal and
-carries the documented post-`fork(2)` hazards.
+## API coverage
 
-## Error semantics
+| OpenBSD facility | Rust module | Status |
+| --- | --- | --- |
+| `pledge(2)` | [`pledge`](https://docs.rs/rust-openbsd/latest/rust_openbsd/pledge/index.html) | supported (typed promises, NULL/empty distinction, execpromises) |
+| `unveil(2)` | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | supported (rules, locking, empty permissions) |
+| privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | supported (daemon sequence, verification, two group policies) |
+| `chroot(2)` | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | supported (`chroot`, `enter_chroot`) |
+| `issetugid(2)`, `getpeereid(3)` | [`credentials`](https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html) | supported |
+| `setproctitle(3)`, `getprogname(3)`/`setprogname(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (format-safe) |
+| `daemon(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`daemonize`, documented fork hazards) |
+| fork/exec + execpromises | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`fork_exec`, `fork_exec_pledged`, `exec_pledged`) |
+| `closefrom(2)`, `getdtablecount(2)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported |
+| `arc4random(3)` family | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported |
+| `getentropy(2)` | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported (native 256-byte limit) |
+| `getrtable(2)`/`setrtable(2)` | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | supported |
+| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
+| `explicit_bzero(3)`, `freezero(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (explicit native memory only) |
+| `timingsafe_bcmp(3)`, `timingsafe_memcmp(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
+| `crypt_checkpass(3)`, `crypt_newhash(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |
+| `bcrypt_pbkdf(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |
+| `imsg(3)`/`ibuf(3)` | — | deferred: substantial IPC abstraction with descriptor-passing ownership; cannot be runtime-validated before shipping; `std` `sendmsg`/`recvmsg` with `SCM_RIGHTS` covers the primitive mechanism |
+| `kqueue(2)`/`kevent(2)` | — | deferred: general event facility with existing ecosystem crates; not OpenBSD-security-specific |
+| `setusercontext(3)`/`login_cap(3)` | — | deferred: login-session policy framework; the daemon privilege-drop sequence remains the supported policy |
+| `pidfile(3)` | — | deferred: the only public OpenBSD API is `atexit`-based with `/var/run`-only naming, weaker than a few lines of explicit `std` code |
+| `posix_spawn(3)` | — | deferred: no demonstrated need over the validated fork/exec architecture |
+| `sysctl(2)` | — | deferred: broad surface better handled per use case |
+| `fsync_range(2)`, `revoke(2)` | — | deferred: niche facilities with little demand from daemons |
+| `getpwnam_shadow(3)` | — | deferred: `crypt_checkpass` covers authentication; direct shadow reads are niche |
+| `readpassphrase(3)` | — | deferred: interactive tty handling, marginal for daemons |
+| `reallocarray(3)`/`recallocarray(3)`, `strlcpy(3)`/`strlcat(3)`, `strtonum(3)`, `fmt_scaled(3)`, `fparseln(3)`, `ohash(3)`, `getbsize(3)`, `opendev(3)` | — | not useful from Rust: C allocation/parsing helpers with existing equivalents |
+| `pinsyscalls(2)`, `kbind(2)`, `__tfork(2)`, `__thrsleep(2)`, `futex(2)`, `__get_tcb(2)`, `__pledge_open(2)`, `utrace(2)`, `syscall(2)` | — | internal kernel/libc interfaces, not application APIs |
+| `skey(3)` | — | obsolete |
 
-* Failing `pledge(2)`, `unveil(2)`, and `chroot(2)` calls return [`Errno`], the
-  error reported by the kernel (`EPERM`, `EINVAL`, `ENOENT`, ...).
-* `pledge(2)` violations do not return an error: the kernel aborts the process
-  with an uncatchable `SIGABRT` unless the `error` promise is active.
-* `unveil(2)` denials surface later as `EACCES`/`ENOENT` at the filesystem call
-  site.
-* [`Errno`] implements [`core::error::Error`] and, with the `std` feature,
-  converts to and from [`std::io::Error`].
-* Strings that cross the FFI boundary are rejected if they contain embedded NUL
-  bytes rather than being silently truncated.
+Facilities above are audited against OpenBSD 7.9 (stable target) and
+OpenBSD-current.
 
-## Security limitations
+## Supported OpenBSD versions
 
-* Applying pledge restrictions to a process that has already started threads, an
-  asynchronous runtime, or libraries that need further system calls can abort the
-  process. The kernel unwinds sibling threads while cleaning up unveil state, and
-  the resumed threads then perform syscalls the fresh restriction forbids.
-* `chroot(2)` is not a sandbox: a root process may escape it, and open file
-  descriptors keep access to resources outside the new root.
-* `unveil(2)` restrictions are process-wide and, once locked, cannot be changed.
-* Privilege dropping is irreversible. Treat any [`PrivDropError`] as fatal.
-* [`daemonize`](https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html)
-  runs a caller closure after a raw `fork(2)`; in a multithreaded process only
-  async-signal-safe operations are reliable in the child, so call it before
-  spawning threads or accept the documented risk.
-* [`timingsafe_bcmp`] and [`timingsafe_memcmp`] compare byte slices in constant
-  time, but comparing *different lengths* reveals the length; lengths are not
-  treated as secret.
-* This crate provides primitives, not a sandbox. Correctness depends on the
-  caller performing the transitions in the documented order.
+* Targets **OpenBSD 7.9** and **OpenBSD-current**.
+* The [`Promise`] list was verified against the kernel's `pledgereq` table in
+  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c):
+  35 promises, `tmppath` removed, `disklabel`, `drm`, and `vmm` included.
+* Unveil permissions were verified against `sys/kern/kern_unveil.c`: `r`, `w`,
+  `x`, `c`, with the empty permission set valid.
+* Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
+  `NGROUPS_MAX` (16); the password buffer size is `_PASSWORD_LEN` (128).
 
-## Feature gating
+### Language standards
 
-The crate is `no_std` by default. The `alloc` feature adds the functions that
-return owned buffers ([`arc4_random_bytes`], [`get_entropy_bytes`],
-[`crypt_newhash`], [`bcrypt_pbkdf`]); the `std` feature (on by default, and
-implying `alloc`) adds the exec helpers that build on [`std::process::Command`]
-and the conversions between [`Errno`] and [`std::io::Error`]. Everything else,
-including the pledge, unveil, and privilege-dropping interfaces, works without
-either.
+The language baseline is declared explicitly in `Cargo.toml`, so the build does
+not depend on the compiler default:
+
+* **Rust 2024 edition**, with a minimum supported Rust version of **1.85.0**, the
+  edition-2024 minimum. Upstream `priv_sep` declared a newer MSRV that does not
+  exist on OpenBSD 7.9, which ships Rust 1.94.1.
+* No C shim is used. The only variadic native interfaces,
+  `setproctitle(3)` and `open(2)`, are called through Rust's variadic FFI with
+  fixed literals, so the crate is pure Rust and needs no C compiler.
+
+### Cargo features
+
+The crate is `no_std` and has no dependencies. `alloc` adds the functions that
+return owned buffers; `std` (the default, and implying `alloc`) adds the exec
+helpers built on [`std::process::Command`] and the [`Errno`]/[`std::io::Error`]
+conversions. Everything else, including pledge, unveil, and privilege dropping,
+works without either.
 
 ## Testing
-
-The unit tests cover pure serialization and set logic and run anywhere the crate
-compiles. The integration tests exercise the real OpenBSD kernel and **must run
-on OpenBSD**:
 
 ```console
 cargo test
 ```
 
-Every destructive or irreversible test runs in an isolated child process, so the
-test runner never loses privileges or has its authority restricted. Tests that
-trigger `SIGABRT` inspect the child's termination status. Tests that require root
-skip cleanly when the runner is not root; run them separately as root:
+Runtime tests exercise the real kernel interfaces in forked child processes.
+Tests that require root (privilege dropping, the `id`-promise lifecycle, the
+`rtable` domain change) are skipped cleanly when the test runner is not root.
+Some pledge tests expect the child process to die with `SIGABRT`, which is
+normal and part of the test; they inspect the child's termination status instead
+of letting the suite crash. The `_exit`-only (empty promise set) state and the
+exec-promise probes are verified by small single-threaded C programs compiled at
+test time, skipped when `cc` is unavailable.
 
-```console
-doas cargo test -- --nocapture
-```
+## Continuous integration
 
-A passing unprivileged run does **not** prove that privilege dropping works; the
-privileged stage must be executed as root. Some exec-promise tests compile a
-small C probe with the system compiler and skip when `cc` is unavailable. The
-`_exit`-only (empty promise set) state is verified by a single-threaded native
-probe rather than from the multithreaded test runner: reducing a threaded
-process to that state makes the kernel unwind sibling threads, whose resumed
-system calls are then forbidden and abort the process.
+GitHub Actions boots a real OpenBSD 7.9 virtual machine
+(`vmactions/openbsd-vm`), on both amd64 and arm64, for every push to `main` and
+every pull request, and runs the full validation inside it:
 
-## Minimum supported Rust version
+* installs the native OpenBSD Rust toolchain with `pkg_add`;
+* `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+  and `cargo test`, executed as an unprivileged `builder` user;
+* the `no_std` and `alloc` feature combinations;
+* `cargo doc` and `cargo package`;
+* runs the test suite again as `root`, and fails if the privilege-dropping tests
+  are skipped or do not pass, so the real, effective and saved UID/GID drops and
+  the inability to regain root are exercised against the actual kernel.
 
-**Rust 1.85.0** (the edition-2024 minimum). Upstream `priv_sep` declared a newer
-MSRV that does not exist on OpenBSD 7.9, which ships Rust 1.94.1; 1.85.0 is the
-lowest toolchain that provides every language feature used here.
+Every third-party action is pinned to a full commit hash and GitHub token
+permissions are minimal.
 
 ## Licensing and attribution
 
@@ -402,16 +648,18 @@ the typed `Promises`/`Permissions` sets, the `CStrHelper` path conversion, and t
 OpenBSD `errno` table originate from that project and are retained here.
 
 The [Haskell `openbsd` package](https://github.com/daviduhden/haskell-openbsd) by
-**James Hobson** and **David Uhden Collado** (BSD-3-Clause) is used as the
-functional reference: its public API, documented semantics, and kernel-tested
-behavior are the feature-parity baseline. No Haskell source code is reused; it is
-treated as a behavioral specification.
+**James Hobson** and **David Uhden Collado** (BSD-3-Clause) is the functional
+reference: its public API, documented semantics, and kernel-tested behavior are
+the feature-parity baseline. No Haskell source code is reused; it is treated as a
+behavioral specification.
 
 This is a fork, not an independent clean-room implementation, and it does not
 represent the original upstream work as new.
 
 [`Promise`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
+[`Promise::Error`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
 [`Promises`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Promises.html
+[`pledge`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge.html
 [`pledge_child`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_child.html
 [`pledge_parts`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_parts.html
 [`pledge_raw`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_raw.html
@@ -420,19 +668,30 @@ represent the original upstream work as new.
 [`lock_unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.lock_unveil.html
 [`unveil_and_lock`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_and_lock.html
 [`CStrHelper`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/trait.CStrHelper.html
-[`drop_privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges.html
-[`drop_privileges_to`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_to.html
+[`Permission::Read`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
+[`Permission::Write`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
+[`Permission::Execute`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
+[`Permission::Create`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
 [`Account`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Account.html
-[`chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
-[`chroot()`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
-[`enter_chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.enter_chroot.html
+[`account_by_name`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.account_by_name.html
+[`drop_privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges.html
+[`drop_privileges_with`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_with.html
+[`drop_privileges_to`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_to.html
+[`GroupPolicy`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
+[`GroupPolicy::PrimaryGroupOnly`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
+[`GroupPolicy::Initgroups`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
 [`PrivDropError`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.PrivDropError.html
 [`Errno`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Errno.html
-[`timingsafe_bcmp`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.timingsafe_bcmp.html
-[`timingsafe_memcmp`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.timingsafe_memcmp.html
-[`arc4_random_bytes`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.arc4_random_bytes.html
-[`get_entropy_bytes`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.get_entropy_bytes.html
-[`crypt_newhash`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.crypt_newhash.html
-[`bcrypt_pbkdf`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.bcrypt_pbkdf.html
+[`chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
+[`enter_chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.enter_chroot.html
+[`PROCTITLE_MAX`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/constant.PROCTITLE_MAX.html
+[`arc4_random_uniform`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.arc4_random_uniform.html
+[`mimmutable`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.mimmutable.html
+[`freezero`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.freezero.html
+[`explicit_bzero`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.explicit_bzero.html
+[`daemonize`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html
+[`DaemonOptions`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
+[`DaemonOptions::change_directory_to_root`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
+[`DaemonOptions::redirect_standard_streams`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
 [`std::process::Command`]: https://doc.rust-lang.org/stable/std/process/struct.Command.html
 [`std::io::Error`]: https://doc.rust-lang.org/stable/std/io/struct.Error.html
