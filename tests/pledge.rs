@@ -104,17 +104,6 @@ fn child_exec_increase_is_eperm() {
     exit_now(0);
 }
 
-/// An empty promise set permits no operation other than `_exit(2)`, so any
-/// other system call aborts the process.
-#[test]
-#[ignore = "isolated child process"]
-fn child_empty_set_aborts_on_activity() {
-    assert_eq!(pledge(&Promises::NONE), Ok(()));
-    // `stat(2)` needs the `rpath` promise; the kernel kills the process.
-    drop(std::fs::metadata("/"));
-    exit_now(0);
-}
-
 /// The `error` promise turns a violation into `ENOSYS` instead of `SIGABRT`.
 #[test]
 #[ignore = "isolated child process"]
@@ -163,11 +152,20 @@ fn child_pledge_raw() {
     exit_now(0);
 }
 
-/// `pledge_raw` with an empty string requests the empty promise set.
+/// `pledge_raw` with an empty string requests an empty promise set for the
+/// argument it is applied to.
+///
+/// Only the *exec* promise set is exercised here: it does not restrict the
+/// current process. The empty *current* promise set is exercised by the
+/// single-threaded `new_empty_promise_set_probe` tests below, because reducing
+/// a multithreaded process to the `_exit`-only state makes the kernel unwind
+/// sibling threads.
 #[test]
 #[ignore = "isolated child process"]
-fn child_pledge_raw_empty() {
-    assert_eq!(pledge_raw(Some(c""), None), Ok(()));
+fn child_pledge_raw_empty_exec() {
+    assert_eq!(pledge_raw(None, Some(c"")), Ok(()));
+    // The current process keeps its (unrestricted) promises.
+    drop(std::fs::metadata("/"));
     exit_now(0);
 }
 
@@ -233,8 +231,32 @@ fn exec_promise_increase_is_eperm() {
 }
 
 #[test]
-fn empty_promise_set_aborts_the_process() {
-    assert_sigabrt(&run_child("child_empty_set_aborts_on_activity"));
+fn empty_promise_set_allows_exit() {
+    let Some(probe) = common::compile_empty_pledge_probe() else {
+        println!("SKIP empty-promises: system C compiler unavailable");
+        return;
+    };
+    let output = Command::new(&probe).output().expect("run probe");
+    assert!(
+        output.status.success(),
+        "empty promise set probe failed: {output:?}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    drop(std::fs::remove_file(&probe));
+}
+
+#[test]
+fn empty_promise_set_aborts_on_activity() {
+    let Some(probe) = common::compile_empty_pledge_probe() else {
+        println!("SKIP empty-promises: system C compiler unavailable");
+        return;
+    };
+    let output = Command::new(&probe)
+        .arg("violate")
+        .output()
+        .expect("run probe");
+    assert_sigabrt(&output);
+    drop(std::fs::remove_file(&probe));
 }
 
 #[test]
@@ -253,8 +275,8 @@ fn raw_pledge_semantics() {
 }
 
 #[test]
-fn raw_pledge_empty_string() {
-    assert_success(&run_child("child_pledge_raw_empty"));
+fn raw_pledge_empty_exec_promises() {
+    assert_success(&run_child("child_pledge_raw_empty_exec"));
 }
 
 #[test]

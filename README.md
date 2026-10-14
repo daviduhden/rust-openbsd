@@ -263,7 +263,11 @@ doas cargo test -- --nocapture
 
 A passing unprivileged run does **not** prove that privilege dropping works; the
 privileged stage must be executed as root. Some exec-promise tests compile a
-small C probe with the system compiler and skip when `cc` is unavailable.
+small C probe with the system compiler and skip when `cc` is unavailable. The
+`_exit`-only (empty promise set) state is verified by a single-threaded native
+probe rather than from the multithreaded test runner: reducing a threaded
+process to that state makes the kernel unwind sibling threads, whose resumed
+system calls are then forbidden and abort the process.
 
 ## Minimum supported Rust version
 

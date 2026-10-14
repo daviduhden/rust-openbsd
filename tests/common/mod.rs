@@ -148,3 +148,49 @@ pub(crate) fn compile_exec_probe() -> Option<std::path::PathBuf> {
         .expect("run cc");
     if status.success() { Some(binary) } else { None }
 }
+
+/// Source of the single-threaded probe for the empty (`_exit`-only) promise set.
+///
+/// Reducing a *multithreaded* process to the empty promise set makes the kernel
+/// unwind sibling threads while cleaning up unveil state; the resumed threads
+/// then perform syscalls the fresh restriction forbids and abort the process.
+/// That is an interaction with the runtime environment, not a property of
+/// `pledge(2)`, so this state is exercised from a dedicated single-threaded
+/// native program instead of from the multithreaded libtest child.
+const EMPTY_PLEDGE_PROBE_SOURCE: &str = r#"
+#include <fcntl.h>
+#include <unistd.h>
+
+int
+main(int argc, char **argv)
+{
+	if (pledge("", nullptr) == -1)
+		_exit(3);
+	if (argc > 1 && argv[1][0] == 'v') {
+		/* requires "rpath"; forbidden under the empty promise set */
+		if (open("/", O_RDONLY) == -1)
+			_exit(4);
+		_exit(1);
+	}
+	_exit(0);
+}
+"#;
+
+/// Compiles the empty-promise-set probe and returns its path.
+///
+/// Returns `None` when the system C compiler is unavailable, so that the
+/// calling test can skip instead of failing.
+pub(crate) fn compile_empty_pledge_probe() -> Option<std::path::PathBuf> {
+    let dir = std::path::Path::new("/tmp");
+    let source = dir.join("rust-openbsd-empty-pledge-probe.c");
+    let binary = dir.join("rust-openbsd-empty-pledge-probe");
+    std::fs::write(&source, EMPTY_PLEDGE_PROBE_SOURCE).expect("write probe source");
+    let status = Command::new("cc")
+        .args(["-std=c23", "-Wall", "-Wextra", "-Werror"])
+        .arg("-o")
+        .arg(&binary)
+        .arg(&source)
+        .status()
+        .expect("run cc");
+    if status.success() { Some(binary) } else { None }
+}
