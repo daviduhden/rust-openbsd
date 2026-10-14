@@ -1,4 +1,4 @@
-# openbsd-rust
+# Rust OpenBSD
 
 Idiomatic, OpenBSD-only Rust bindings for the security facilities that are
 unique to [OpenBSD](https://www.openbsd.org/):
