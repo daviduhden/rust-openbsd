@@ -652,12 +652,12 @@ permissions are minimal.
 
 ## Licensing and attribution
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option.
+Licensed under the [Apache License, Version 2.0](LICENSE-APACHE).
 
 This project is a fork of [`priv_sep`](https://git.philomathiclife.com/repos/priv_sep)
 by **Zack Newman**, which is dual-licensed under MIT and Apache-2.0. The original
-copyright notices and licenses are preserved. Large parts of the FFI structure,
+copyright notices are preserved, and this project is distributed under the terms
+of the Apache License, Version 2.0. Large parts of the FFI structure,
 the typed `Promises`/`Permissions` sets, the `CStrHelper` path conversion, and the
 OpenBSD `errno` table originate from that project and are retained here.
 
