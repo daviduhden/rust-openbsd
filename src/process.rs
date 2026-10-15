@@ -136,6 +136,11 @@ pub fn reset_proctitle() {
 /// The returned reference is valid for the lifetime of the process: the native
 /// program name is process-global and is only ever replaced by another
 /// long-lived name.
+///
+/// The value is supplied by the invoking process (normally from `argv[0]`) and
+/// must not be trusted by set-user-ID or set-group-ID programs; use
+/// [`is_setugid`](crate::is_setugid) to detect that situation before relying
+/// on the name for diagnostics.
 #[expect(unsafe_code, reason = "getprogname(3) returns a raw pointer")]
 #[must_use]
 pub fn progname() -> &'static CStr {
@@ -179,6 +184,10 @@ pub fn set_progname(name: &'static CStr) {
 /// descriptors to keep reserved at the low numbers. The argument itself is
 /// closed too, as are any runtime-managed descriptors above it.
 ///
+/// The native call reports [`Errno::EBADF`] when `lowfd` is greater than every
+/// open descriptor (that is, there is nothing to close); this wrapper discards
+/// the result, matching the usual fire-and-forget usage.
+///
 /// # Pledge
 ///
 /// Allowed under the `stdio` promise.
@@ -187,11 +196,11 @@ pub fn close_from(lowfd: c_int) {
     let _ = ffi::closefrom(lowfd);
 }
 
-/// Returns one more than the highest open file descriptor, as
+/// Returns the number of file descriptors the process currently has open, as
 /// [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2).
 ///
-/// Useful for auditing and for descriptor-hygiene checks around spawn and
-/// privilege-separation boundaries.
+/// The native call cannot fail. Useful for auditing and for descriptor-hygiene
+/// checks around spawn and privilege-separation boundaries.
 ///
 /// # Pledge
 ///
@@ -359,6 +368,12 @@ pub fn daemonize<F: FnOnce()>(body: F) {
 /// ```
 ///
 /// and the original process exits immediately, exactly like `daemon(3)`.
+///
+/// The only way this function returns to its caller is if `fork(2)` itself
+/// fails. It then returns in the original process, which is still attached to
+/// its controlling terminal; there is no detached child in which to report the
+/// error. A caller that requires detachment must therefore treat a normal
+/// return as fatal rather than assuming the process has been daemonized.
 ///
 /// # Correctness (read this before using it)
 ///

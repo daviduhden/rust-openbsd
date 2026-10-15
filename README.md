@@ -168,7 +168,10 @@ Permissions are `r`, `w`, `x`, `c` ([`Permission::Read`], [`Permission::Write`],
 [`Permission::Execute`], [`Permission::Create`]). The empty permission set is
 valid and unveils a path without permitting any operation on it. Paths are
 accepted through [`CStrHelper`], so they may be `Path`, `OsStr`, `str`, or raw
-byte slices and need not be valid UTF-8; interior NUL bytes are rejected.
+byte slices and need not be valid UTF-8; interior NUL bytes are rejected. A
+later call for a path that is already unveiled replaces that path's permissions;
+unlike pledge promises, unveil permissions are not monotonic and may be both
+widened and narrowed.
 
 If the process is pledged, `unveil(2)` itself requires the `unveil` promise.
 Conversely, a `pledge(2)` call that removes all path-accessing promises destroys
@@ -494,10 +497,13 @@ fn main() {
 ```
 
 [`mimmutable`] permanently forbids future changes to the protection or mapping
-of a memory region. [`freezero`] zeroes and releases a `malloc(3)` allocation and
-is `unsafe` because ownership transfers to it. The constant-time comparisons are
-the recommended interfaces for comparing secrets such as hashes and MACs; do not
-reimplement them with an early-exiting comparison.
+of a memory region. It is `unsafe`: the kernel rounds the range outward to whole
+pages, so the caller must guarantee that every affected page belongs to a
+dedicated mapping rather than an ordinary Rust allocation. [`freezero`] zeroes
+and releases a `malloc(3)` allocation and is `unsafe` because ownership
+transfers to it. The constant-time comparisons are the recommended interfaces
+for comparing secrets such as hashes and MACs; do not reimplement them with an
+early-exiting comparison.
 
 ## Authentication
 
@@ -553,7 +559,7 @@ command-line interface, and no unrelated functionality.
 | `arc4random(3)` family | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported |
 | `getentropy(2)` | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported (native 256-byte limit) |
 | `getrtable(2)`/`setrtable(2)` | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | supported |
-| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
+| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (`unsafe`; the caller guarantees a dedicated mapping) |
 | `explicit_bzero(3)`, `freezero(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (explicit native memory only) |
 | `timingsafe_bcmp(3)`, `timingsafe_memcmp(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
 | `crypt_checkpass(3)`, `crypt_newhash(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |

@@ -262,9 +262,10 @@ pub use crate::{
     memory::{explicit_bzero, freezero, mimmutable, timingsafe_bcmp, timingsafe_memcmp},
     pledge::{Promise, Promises, pledge, pledge_both, pledge_child, pledge_parts, pledge_raw},
     privileges::{
-        Account, Gid, GroupPolicy, Groups, NGROUPS_MAX, PrivDropError, PrivDropStep, Uid,
-        account_by_name, drop_privileges, drop_privileges_to, drop_privileges_with, get_res_gid,
-        get_res_uid, groups, init_groups, set_groups, set_res_gid, set_res_uid,
+        Account, Gid, GroupPolicy, Groups, LOGIN_NAME_MAX, NGROUPS_MAX, PrivDropError,
+        PrivDropStep, Uid, Verification, account_by_name, drop_privileges, drop_privileges_to,
+        drop_privileges_with, get_res_gid, get_res_uid, groups, init_groups, set_groups,
+        set_res_gid, set_res_uid,
     },
     process::{
         DaemonOptions, PATH_MAX, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,

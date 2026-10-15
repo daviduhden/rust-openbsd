@@ -108,5 +108,9 @@ fn mimmutable_freezes_a_mapping() {
     // SAFETY: `page` is a live mapping of 4096 readable bytes that is never
     // freed (it is immutable, so it cannot be).
     let region = unsafe { slice::from_raw_parts(page.cast::<u8>(), 4096) };
-    assert_eq!(mimmutable(region), Ok(()));
+    // SAFETY: `region` is exactly one page of a dedicated anonymous mapping
+    // that is deliberately never unmapped and never returned to the allocator,
+    // so rounding the range outward to page boundaries only touches this
+    // mapping.
+    assert_eq!(unsafe { mimmutable(region) }, Ok(()));
 }

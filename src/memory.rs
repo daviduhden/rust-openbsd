@@ -44,20 +44,29 @@ use crate::{
 /// memory containing `bytes`, as
 /// [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2).
 ///
-/// The pages are marked immutable: most subsequent
+/// The kernel aligns the range *outward* to whole pages, rounding the address
+/// down and the length up, so the immutable region can extend beyond `bytes` on
+/// either side. Most subsequent
 /// [`mprotect(2)`](https://man.openbsd.org/mprotect.2),
 /// [`munmap(2)`](https://man.openbsd.org/munmap.2),
 /// [`madvise(2)`](https://man.openbsd.org/madvise.2),
 /// [`msync(2)`](https://man.openbsd.org/msync.2),
 /// [`mmap(2)`](https://man.openbsd.org/mmap.2), and
-/// [`minherit(2)`](https://man.openbsd.org/minherit.2) operations on them fail
-/// with [`Errno::EPERM`]. Reads and writes to the memory itself remain allowed;
-/// the mechanism protects the *mapping*, not the contents. The change is
-/// permanent.
+/// [`minherit(2)`](https://man.openbsd.org/minherit.2) operations on those
+/// pages fail with [`Errno::EPERM`]. Reads and writes to the memory itself
+/// remain allowed; the mechanism protects the *mapping*, not the contents. The
+/// change is permanent.
 ///
-/// The region must be a valid mapped virtual address range. An ordinary
-/// Rust-allocated slice is usually *not* page-aligned, so callers that need
-/// this guarantee should map the region themselves.
+/// # Safety
+///
+/// Because the range is rounded outward, every page that overlaps `bytes` is
+/// marked immutable, including any bytes outside the slice. The caller must
+/// ensure that all of those pages belong to a dedicated mapping that will not
+/// be handed back to a memory manager: passing a slice into an ordinary Rust
+/// allocation can freeze the allocator's own metadata, after which its
+/// `mprotect(2)`/`munmap(2)` calls fail. Freeze only standalone mappings
+/// created for the purpose (for example with
+/// [`mmap(2)`](https://man.openbsd.org/mmap.2)), never heap memory.
 ///
 /// # Errors
 ///
@@ -68,11 +77,13 @@ use crate::{
 ///
 /// Allowed under the `stdio` promise.
 #[expect(unsafe_code, reason = "mimmutable(2) takes a raw pointer")]
-pub fn mimmutable(bytes: &[u8]) -> Result<(), Errno> {
+pub unsafe fn mimmutable(bytes: &[u8]) -> Result<(), Errno> {
     // SAFETY:
-    // `bytes` is a live slice and `len` is exactly its length, so the pointer
-    // and length describe a valid region for the duration of the call.
-    // `mimmutable(2)` only changes page metadata, never the contents.
+    // The caller guarantees that the page-rounded region overlapping `bytes`
+    // is a dedicated mapping. `bytes` is a live slice and `len` is exactly its
+    // length, so the pointer and length describe a valid region for the
+    // duration of the call. `mimmutable(2)` only changes page metadata, never
+    // the contents.
     let code = unsafe { ffi::mimmutable(bytes.as_ptr().cast::<c_void>().cast_mut(), bytes.len()) };
     if code == SUCCESS {
         Ok(())

@@ -73,6 +73,23 @@ fn child_lock_is_irreversible() {
     exit_now(0);
 }
 
+/// A later rule for the same path replaces its permissions instead of adding
+/// to them: the kernel stores exactly the flags of the most recent call.
+#[test]
+#[ignore = "isolated child process"]
+fn child_repeated_rule_replaces_permissions() {
+    assert_eq!(unveil("/", Permissions::READ), Ok(()));
+    // Re-unveiling "/" with no permissions must replace the read rule, not
+    // union with it.
+    assert_eq!(unveil("/", Permissions::NONE), Ok(()));
+    assert_eq!(lock_unveil(), Ok(()));
+    assert!(
+        std::fs::read("/dev/null").is_err(),
+        "the replaced rule still granted read access"
+    );
+    exit_now(0);
+}
+
 /// A nonexistent directory component fails with `ENOENT`.
 #[test]
 #[ignore = "isolated child process"]
@@ -146,6 +163,11 @@ fn empty_permissions_grant_nothing() {
 #[test]
 fn locking_is_irreversible() {
     assert_success(&run_child("child_lock_is_irreversible"));
+}
+
+#[test]
+fn repeated_rule_replaces_permissions() {
+    assert_success(&run_child("child_repeated_rule_replaces_permissions"));
 }
 
 #[test]
