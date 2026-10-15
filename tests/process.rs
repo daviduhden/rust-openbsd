@@ -33,8 +33,8 @@ mod common;
 
 use common::{assert_sigabrt, assert_success, compile_exec_probe, exit_now, run_child};
 use rust_openbsd::{
-    Promise, Promises, close_from, dtable_count, exec_pledged, fork_exec, fork_exec_pledged,
-    progname, reset_proctitle, set_proctitle, set_progname,
+    DaemonOptions, Promise, Promises, close_from, daemonize_with, dtable_count, exec_pledged,
+    fork_exec, fork_exec_pledged, progname, reset_proctitle, set_proctitle, set_progname,
 };
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,21 @@ fn child_process_state() {
     assert!(dtable_count() > 0, "the standard descriptors were closed");
 
     exit_now(0);
+}
+
+/// On success `daemonize_with` never returns: the original process exits and
+/// `body` runs in the detached child. Reaching the statement after the call
+/// therefore means `fork(2)` failed, which the wrapper reports as `Err`.
+#[test]
+#[ignore = "isolated child process"]
+fn child_daemonize_never_returns_on_success() {
+    let options = DaemonOptions {
+        change_directory_to_root: false,
+        redirect_standard_streams: false,
+    };
+    let result = daemonize_with(options, || {});
+    // Only a failed fork(2) returns here; that is a test failure.
+    panic!("daemonize_with returned {result:?}");
 }
 
 /// `fork_exec_pledged` caps the caller's exec promises, so it must not run in
@@ -103,6 +118,11 @@ fn child_exec_pledged_violation() {
 #[test]
 fn process_state_is_queryable() {
     assert_success(&run_child("child_process_state"));
+}
+
+#[test]
+fn daemonize_does_not_return_on_success() {
+    assert_success(&run_child("child_daemonize_never_returns_on_success"));
 }
 
 #[test]

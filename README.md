@@ -428,7 +428,9 @@ run caller code in the post-fork child.
 [`DaemonOptions`] with positively named fields
 ([`DaemonOptions::change_directory_to_root`],
 [`DaemonOptions::redirect_standard_streams`]) instead of the inverted
-`nochdir`/`noclose` integers of `daemon(3)`. Daemonization is explicit and never
+`nochdir`/`noclose` integers of `daemon(3)`. On success they do not return (the
+parent exits and the body runs in the detached child); the single return path is
+a failed `fork(2)`, reported as `Err`. Daemonization is explicit and never
 automatic: foreground operation (preferred under modern service supervision such
 as rc.d) is fully supported. This is the one raw-`fork(2)` facility in the
 crate, and it documents the usual post-fork hazards: in a multithreaded process

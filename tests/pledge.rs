@@ -53,6 +53,16 @@ fn child_valid_promises() {
     exit_now(0);
 }
 
+/// The kernel accepts every promise name in the inventory: a single `pledge(2)`
+/// with all of them fails with `EINVAL` if any name is obsolete or misspelled.
+/// This complements the pure unit test, which only round-trips the Rust table.
+#[test]
+#[ignore = "isolated child process"]
+fn child_all_promise_names_accepted() {
+    assert_eq!(pledge(&Promises::ALL), Ok(()));
+    exit_now(0);
+}
+
 /// `NULL` leaves a value unchanged; an increase is still rejected.
 #[test]
 #[ignore = "isolated child process"]
@@ -222,6 +232,11 @@ fn child_empty_exec_promises_abort_child() {
 #[test]
 fn valid_promises_are_accepted() {
     assert_success(&run_child("child_valid_promises"));
+}
+
+#[test]
+fn all_promise_names_are_accepted_by_the_kernel() {
+    assert_success(&run_child("child_all_promise_names_accepted"));
 }
 
 #[test]

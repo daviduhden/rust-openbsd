@@ -90,6 +90,24 @@ fn child_repeated_rule_replaces_permissions() {
     exit_now(0);
 }
 
+/// A later rule may *widen* a path's permissions before locking: unveil
+/// permissions are not monotonic. This is the opposite direction from
+/// `child_repeated_rule_replaces_permissions`.
+#[test]
+#[ignore = "isolated child process"]
+fn child_rule_can_be_widened_before_locking() {
+    assert_eq!(unveil("/tmp", Permissions::READ), Ok(()));
+    let read_write_create = Permissions::READ
+        .enable(Permission::Write)
+        .enable(Permission::Create);
+    assert_eq!(unveil("/tmp", read_write_create), Ok(()));
+    assert_eq!(lock_unveil(), Ok(()));
+    let file = "/tmp/rust-openbsd-widen";
+    std::fs::write(file, b"x").expect("write under widened /tmp");
+    drop(std::fs::remove_file(file));
+    exit_now(0);
+}
+
 /// A nonexistent directory component fails with `ENOENT`.
 #[test]
 #[ignore = "isolated child process"]
@@ -168,6 +186,11 @@ fn locking_is_irreversible() {
 #[test]
 fn repeated_rule_replaces_permissions() {
     assert_success(&run_child("child_repeated_rule_replaces_permissions"));
+}
+
+#[test]
+fn rule_can_be_widened_before_locking() {
+    assert_success(&run_child("child_rule_can_be_widened_before_locking"));
 }
 
 #[test]

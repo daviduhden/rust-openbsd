@@ -29,6 +29,8 @@ use core::{cmp::Ordering, ffi::c_void, ptr, slice};
 
 use rust_openbsd::{explicit_bzero, freezero, mimmutable, timingsafe_bcmp, timingsafe_memcmp};
 
+/// `PROT_READ` from OpenBSD's `<sys/mman.h>`.
+const PROT_READ: i32 = 0x1;
 /// `PROT_READ | PROT_WRITE` from OpenBSD's `<sys/mman.h>`.
 const PROT_READ_WRITE: i32 = 0x1 | 0x2;
 /// `MAP_ANON` from OpenBSD's `<sys/mman.h>`.
@@ -48,6 +50,8 @@ unsafe extern "C" {
         fd: i32,
         offset: i64,
     ) -> *mut c_void;
+    /// `mprotect(2)`.
+    fn mprotect(addr: *mut c_void, len: usize, prot: i32) -> i32;
 }
 
 #[test]
@@ -113,4 +117,39 @@ fn mimmutable_freezes_a_mapping() {
     // so rounding the range outward to page boundaries only touches this
     // mapping.
     assert_eq!(unsafe { mimmutable(region) }, Ok(()));
+}
+
+#[test]
+fn mimmutable_blocks_later_protection_changes() {
+    // SAFETY: `mmap(2)` with these arguments is always safe to call; the result
+    // is checked for `MAP_FAILED` before use.
+    let page = unsafe {
+        mmap(
+            ptr::null_mut(),
+            4096,
+            PROT_READ_WRITE,
+            MAP_ANON | MAP_PRIVATE,
+            -1,
+            0,
+        )
+    };
+    assert_ne!(page as isize, -1, "mmap(2) failed");
+    // SAFETY: `page` is a live mapping of 4096 bytes that is deliberately never
+    // freed.
+    let region = unsafe { slice::from_raw_parts(page.cast::<u8>(), 4096) };
+    // SAFETY: `region` is a dedicated page-aligned anonymous mapping, never
+    // returned to a memory manager.
+    assert_eq!(unsafe { mimmutable(region) }, Ok(()));
+    // Removing write permission is a real protection change and must now fail.
+    // SAFETY: `page` is a live mapping; `mprotect(2)` only changes protection.
+    let rc = unsafe { mprotect(page, 4096, PROT_READ) };
+    assert_eq!(
+        rc, -1,
+        "mprotect(2) unexpectedly succeeded on immutable memory"
+    );
+    assert_eq!(
+        rust_openbsd::Errno::last(),
+        rust_openbsd::Errno::EPERM,
+        "unexpected errno from mprotect(2)"
+    );
 }
