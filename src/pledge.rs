@@ -132,7 +132,11 @@ pub enum Promise {
 impl Promise {
     /// Every promise exposed for the selected API version, in the order used by
     /// `kern_pledge.c`.
-    pub const ALL: [Self; 35 - 2 * cfg!(feature = "openbsd-8-0") as usize] = [
+    pub const ALL: [Self; if cfg!(feature = "openbsd-8-0") {
+        33
+    } else {
+        35
+    }] = [
         Self::Audio,
         Self::Bpf,
         Self::Chown,
