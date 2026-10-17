@@ -237,6 +237,12 @@ pub fn exec_pledged(promises: &Promises, command: &mut std::process::Command) ->
 /// [`fork(2)`](https://man.openbsd.org/fork.2) followed by
 /// [`execve(2)`](https://man.openbsd.org/execve.2).
 ///
+/// With `openbsd-8-0`, the removed execution promise cannot be requested.
+/// Under kernels that require it for `execve`, the caller must remain
+/// unpledged to spawn a program. Setting execution promises does not grant
+/// execution permission to the caller or to the new image; a pledged new
+/// image cannot subsequently execute other programs without that permission.
+///
 /// This changes no pledge policy: any execution promises already configured in
 /// the parent apply to the child. If the calling process has pledged itself,
 /// its current promises must still allow `fork` and `execve` (generally `proc`
