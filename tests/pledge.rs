@@ -1,3 +1,17 @@
+// Copyright 2024-2026 Zack Newman and David Uhden Collado
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Kernel tests for [`pledge(2)`](https://man.openbsd.org/pledge.2).
 //!
 //! Every case that changes process-wide state runs in an isolated child process
@@ -36,6 +50,16 @@ fn child_valid_promises() {
     let promises = Promises::new([Promise::Stdio, Promise::Rpath]);
     assert_eq!(pledge(&promises), Ok(()));
     assert_eq!(pledge(&promises), Ok(()));
+    exit_now(0);
+}
+
+/// The kernel accepts every promise name in the inventory: a single `pledge(2)`
+/// with all of them fails with `EINVAL` if any name is obsolete or misspelled.
+/// This complements the pure unit test, which only round-trips the Rust table.
+#[test]
+#[ignore = "isolated child process"]
+fn child_all_promise_names_accepted() {
+    assert_eq!(pledge(&Promises::ALL), Ok(()));
     exit_now(0);
 }
 
@@ -210,6 +234,11 @@ fn child_empty_exec_promises_abort_child() {
 #[test]
 fn valid_promises_are_accepted() {
     assert_success(&run_child("child_valid_promises"));
+}
+
+#[test]
+fn all_promise_names_are_accepted_by_the_kernel() {
+    assert_success(&run_child("child_all_promise_names_accepted"));
 }
 
 #[test]

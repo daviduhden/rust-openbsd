@@ -1,3 +1,17 @@
+// Copyright 2024-2026 Zack Newman and David Uhden Collado
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Process titles, descriptor hygiene, exec, and daemonization.
 //!
 //! * [`set_proctitle`] and [`reset_proctitle`] wrap
@@ -122,6 +136,11 @@ pub fn reset_proctitle() {
 /// The returned reference is valid for the lifetime of the process: the native
 /// program name is process-global and is only ever replaced by another
 /// long-lived name.
+///
+/// The value is supplied by the invoking process (normally from `argv[0]`) and
+/// must not be trusted by set-user-ID or set-group-ID programs; use
+/// [`is_setugid`](crate::is_setugid) to detect that situation before relying
+/// on the name for diagnostics.
 #[expect(unsafe_code, reason = "getprogname(3) returns a raw pointer")]
 #[must_use]
 pub fn progname() -> &'static CStr {
@@ -165,6 +184,10 @@ pub fn set_progname(name: &'static CStr) {
 /// descriptors to keep reserved at the low numbers. The argument itself is
 /// closed too, as are any runtime-managed descriptors above it.
 ///
+/// The native call reports [`Errno::EBADF`] when `lowfd` is greater than every
+/// open descriptor (that is, there is nothing to close); this wrapper discards
+/// the result, matching the usual fire-and-forget usage.
+///
 /// # Pledge
 ///
 /// Allowed under the `stdio` promise.
@@ -173,11 +196,11 @@ pub fn close_from(lowfd: c_int) {
     let _ = ffi::closefrom(lowfd);
 }
 
-/// Returns one more than the highest open file descriptor, as
+/// Returns the number of file descriptors the process currently has open, as
 /// [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2).
 ///
-/// Useful for auditing and for descriptor-hygiene checks around spawn and
-/// privilege-separation boundaries.
+/// The native call cannot fail. Useful for auditing and for descriptor-hygiene
+/// checks around spawn and privilege-separation boundaries.
 ///
 /// # Pledge
 ///
@@ -241,10 +264,17 @@ pub fn fork_exec(command: &mut std::process::Command) -> std::io::Result<std::pr
 /// the parent *before* forking, and the child does nothing but reach exec, so
 /// the executed program begins pledged with exactly `promises`.
 ///
-/// **Side effect:** this reduces the *caller's* execution promises, which is
-/// monotonic and cannot be widened later. Every future exec from the calling
-/// process and its descendants is then capped by `promises`, so use this only
-/// when those descendants share a common promise ceiling.
+/// # Process-global side effect
+///
+/// This is *not* a per-child configuration. Setting the execution promises
+/// through [`pledge_child`] reduces the *caller's* promises monotonically and
+/// cannot be widened afterwards: every future exec from the calling process and
+/// its descendants is then capped by `promises`, including children spawned by
+/// [`fork_exec`] or by [`std::process::Command`] directly. Use it only when
+/// those descendants share a common promise ceiling; independent per-child
+/// policies require a separate process boundary. If spawning fails after the
+/// promise has been set, the reduction is **not** rolled back and remains in
+/// effect.
 ///
 /// # Errors
 ///
@@ -326,16 +356,20 @@ pub const fn default_daemon_options() -> DaemonOptions {
 
 /// Daemonizes `body` with the default [`DaemonOptions`].
 ///
-/// See [`daemonize_with`].
+/// See [`daemonize_with`] for the exact sequence and return contract.
 ///
-/// # Correctness
+/// # Return value
 ///
-/// This function does not return in the original process: the parent exits, and
-/// `body` runs in the detached child. The caller never observes failures that
-/// occur after the fork.
+/// Returns `Err` only if `fork(2)` fails; on success it never returns (the
+/// original process exits and `body` runs in the detached child).
+///
+/// # Errors
+///
+/// Returns the [`Errno`] set by a failed
+/// [`fork(2)`](https://man.openbsd.org/fork.2).
 #[inline]
-pub fn daemonize<F: FnOnce()>(body: F) {
-    daemonize_with(default_daemon_options(), body);
+pub fn daemonize<F: FnOnce()>(body: F) -> Result<(), Errno> {
+    daemonize_with(default_daemon_options(), body)
 }
 
 /// Detaches from the controlling terminal and runs `body` in the background, as
@@ -351,6 +385,21 @@ pub fn daemonize<F: FnOnce()>(body: F) {
 /// ```
 ///
 /// and the original process exits immediately, exactly like `daemon(3)`.
+///
+/// # Return value
+///
+/// On success this function does not return: the parent has exited and `body`
+/// runs in the detached child, which exits with status 0 when `body` returns.
+///
+/// # Errors
+///
+/// The only return path is a failed
+/// [`fork(2)`](https://man.openbsd.org/fork.2), which yields the [`Errno`] it
+/// set and leaves the original (still attached) process running so the caller
+/// can report the error and abort. If
+/// [`setsid(2)`](https://man.openbsd.org/setsid.2) fails in the child, the child
+/// exits with status 1 without running `body`, because it did not actually
+/// detach; the already-exited parent cannot report that.
 ///
 /// # Correctness (read this before using it)
 ///
@@ -375,15 +424,14 @@ pub fn daemonize<F: FnOnce()>(body: F) {
 /// before pledging. Modern service supervision commonly expects foreground
 /// operation, so only call this when detachment is actually required.
 #[expect(unsafe_code, reason = "chdir(2) takes a raw pointer")]
-pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) {
+pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) -> Result<(), Errno> {
     // SAFETY:
     // `fork(2)` has no memory preconditions of its own; the constraints of
     // running code in the child are documented on this function.
     let pid = unsafe { ffi::fork() };
     if pid < 0 {
-        // The fork failed; stay in the original process rather than pretending
-        // to have detached.
-        return;
+        // The fork failed; report it rather than pretending to have detached.
+        return Err(Errno::last());
     }
     if pid > 0 {
         // The original process exits without running the daemon body, exactly
@@ -391,7 +439,12 @@ pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) {
         ffi::_exit(0);
     }
 
-    let _session = ffi::setsid();
+    // A process created by fork(2) is never a process-group leader, so
+    // setsid(2) cannot normally fail here. If it somehow does, fail closed
+    // rather than running the body while still attached to the terminal.
+    if ffi::setsid() < 0 {
+        ffi::_exit(1);
+    }
     if options.change_directory_to_root {
         // SAFETY:
         // The path is a fixed, NUL-terminated literal; `chdir(2)` only reads

@@ -182,7 +182,10 @@ Permissions are `r`, `w`, `x`, `c` ([`Permission::Read`], [`Permission::Write`],
 [`Permission::Execute`], [`Permission::Create`]). The empty permission set is
 valid and unveils a path without permitting any operation on it. Paths are
 accepted through [`CStrHelper`], so they may be `Path`, `OsStr`, `str`, or raw
-byte slices and need not be valid UTF-8; interior NUL bytes are rejected.
+byte slices and need not be valid UTF-8; interior NUL bytes are rejected. A
+later call for a path that is already unveiled replaces that path's permissions;
+unlike pledge promises, unveil permissions are not monotonic and may be both
+widened and narrowed.
 
 If the process is pledged, `unveil(2)` itself requires the `unveil` promise.
 Conversely, a `pledge(2)` call that removes all path-accessing promises destroys
@@ -439,7 +442,9 @@ run caller code in the post-fork child.
 [`DaemonOptions`] with positively named fields
 ([`DaemonOptions::change_directory_to_root`],
 [`DaemonOptions::redirect_standard_streams`]) instead of the inverted
-`nochdir`/`noclose` integers of `daemon(3)`. Daemonization is explicit and never
+`nochdir`/`noclose` integers of `daemon(3)`. On success they do not return (the
+parent exits and the body runs in the detached child); the single return path is
+a failed `fork(2)`, reported as `Err`. Daemonization is explicit and never
 automatic: foreground operation (preferred under modern service supervision such
 as rc.d) is fully supported. This is the one raw-`fork(2)` facility in the
 crate, and it documents the usual post-fork hazards: in a multithreaded process
@@ -508,10 +513,13 @@ fn main() {
 ```
 
 [`mimmutable`] permanently forbids future changes to the protection or mapping
-of a memory region. [`freezero`] zeroes and releases a `malloc(3)` allocation and
-is `unsafe` because ownership transfers to it. The constant-time comparisons are
-the recommended interfaces for comparing secrets such as hashes and MACs; do not
-reimplement them with an early-exiting comparison.
+of a memory region. It is `unsafe`: the kernel rounds the range outward to whole
+pages, so the caller must guarantee that every affected page belongs to a
+dedicated mapping rather than an ordinary Rust allocation. [`freezero`] zeroes
+and releases a `malloc(3)` allocation and is `unsafe` because ownership
+transfers to it. The constant-time comparisons are the recommended interfaces
+for comparing secrets such as hashes and MACs; do not reimplement them with an
+early-exiting comparison.
 
 ## Authentication
 
@@ -567,7 +575,7 @@ command-line interface, and no unrelated functionality.
 | `arc4random(3)` family | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported |
 | `getentropy(2)` | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported (native 256-byte limit) |
 | `getrtable(2)`/`setrtable(2)` | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | supported |
-| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
+| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (`unsafe`; the caller guarantees a dedicated mapping) |
 | `explicit_bzero(3)`, `freezero(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (explicit native memory only) |
 | `timingsafe_bcmp(3)`, `timingsafe_memcmp(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
 | `crypt_checkpass(3)`, `crypt_newhash(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |
@@ -666,12 +674,12 @@ permissions are minimal.
 
 ## Licensing and attribution
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option.
+Licensed under the [Apache License, Version 2.0](LICENSE-APACHE).
 
 This project is a fork of [`priv_sep`](https://git.philomathiclife.com/repos/priv_sep)
 by **Zack Newman**, which is dual-licensed under MIT and Apache-2.0. The original
-copyright notices and licenses are preserved. Large parts of the FFI structure,
+copyright notices are preserved, and this project is distributed under the terms
+of the Apache License, Version 2.0. Large parts of the FFI structure,
 the typed `Promises`/`Permissions` sets, the `CStrHelper` path conversion, and the
 OpenBSD `errno` table originate from that project and are retained here.
 

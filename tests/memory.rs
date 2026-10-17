@@ -1,3 +1,17 @@
+// Copyright 2024-2026 Zack Newman and David Uhden Collado
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Kernel tests for the memory-protection facilities.
 
 #![allow(
@@ -15,6 +29,8 @@ use core::{cmp::Ordering, ffi::c_void, ptr, slice};
 
 use rust_openbsd::{explicit_bzero, freezero, mimmutable, timingsafe_bcmp, timingsafe_memcmp};
 
+/// `PROT_READ` from OpenBSD's `<sys/mman.h>`.
+const PROT_READ: i32 = 0x1;
 /// `PROT_READ | PROT_WRITE` from OpenBSD's `<sys/mman.h>`.
 const PROT_READ_WRITE: i32 = 0x1 | 0x2;
 /// `MAP_ANON` from OpenBSD's `<sys/mman.h>`.
@@ -34,6 +50,8 @@ unsafe extern "C" {
         fd: i32,
         offset: i64,
     ) -> *mut c_void;
+    /// `mprotect(2)`.
+    fn mprotect(addr: *mut c_void, len: usize, prot: i32) -> i32;
 }
 
 #[test]
@@ -94,5 +112,44 @@ fn mimmutable_freezes_a_mapping() {
     // SAFETY: `page` is a live mapping of 4096 readable bytes that is never
     // freed (it is immutable, so it cannot be).
     let region = unsafe { slice::from_raw_parts(page.cast::<u8>(), 4096) };
-    assert_eq!(mimmutable(region), Ok(()));
+    // SAFETY: `region` is exactly one page of a dedicated anonymous mapping
+    // that is deliberately never unmapped and never returned to the allocator,
+    // so rounding the range outward to page boundaries only touches this
+    // mapping.
+    assert_eq!(unsafe { mimmutable(region) }, Ok(()));
+}
+
+#[test]
+fn mimmutable_blocks_later_protection_changes() {
+    // SAFETY: `mmap(2)` with these arguments is always safe to call; the result
+    // is checked for `MAP_FAILED` before use.
+    let page = unsafe {
+        mmap(
+            ptr::null_mut(),
+            4096,
+            PROT_READ_WRITE,
+            MAP_ANON | MAP_PRIVATE,
+            -1,
+            0,
+        )
+    };
+    assert_ne!(page as isize, -1, "mmap(2) failed");
+    // SAFETY: `page` is a live mapping of 4096 bytes that is deliberately never
+    // freed.
+    let region = unsafe { slice::from_raw_parts(page.cast::<u8>(), 4096) };
+    // SAFETY: `region` is a dedicated page-aligned anonymous mapping, never
+    // returned to a memory manager.
+    assert_eq!(unsafe { mimmutable(region) }, Ok(()));
+    // Removing write permission is a real protection change and must now fail.
+    // SAFETY: `page` is a live mapping; `mprotect(2)` only changes protection.
+    let rc = unsafe { mprotect(page, 4096, PROT_READ) };
+    assert_eq!(
+        rc, -1,
+        "mprotect(2) unexpectedly succeeded on immutable memory"
+    );
+    assert_eq!(
+        rust_openbsd::Errno::last(),
+        rust_openbsd::Errno::EPERM,
+        "unexpected errno from mprotect(2)"
+    );
 }

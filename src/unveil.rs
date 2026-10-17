@@ -1,10 +1,27 @@
+// Copyright 2024-2026 Zack Newman and David Uhden Collado
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! [`unveil(2)`](https://man.openbsd.org/unveil.2): restrict the filesystem
 //! view of a process.
 //!
 //! The first call to `unveil(2)` removes visibility of the entire filesystem
-//! except for explicitly unveiled paths; additional calls add rules. Once all
-//! rules have been installed the configuration should be locked with
-//! [`lock_unveil`] (or [`unveil_and_lock`]). Locking is irreversible.
+//! except for explicitly unveiled paths; additional calls add rules. A call
+//! that targets a path which is already unveiled *replaces* that path's
+//! permissions with the set supplied to the most recent call; it does not
+//! accumulate or union them. Once all rules have been installed the
+//! configuration should be locked with [`lock_unveil`] (or
+//! [`unveil_and_lock`]). Locking is irreversible.
 //!
 //! If the process is pledged, calling `unveil(2)` itself requires the
 //! [`Promise::Unveil`](crate::Promise::Unveil) promise. Conversely, a
@@ -91,8 +108,9 @@ impl Display for Permission {
 /// rule.
 ///
 /// The empty set is valid: the path is unveiled but no operation on it is
-/// permitted. Permission sets *can* be widened by later `unveil(2)` calls,
-/// unlike pledge promises.
+/// permitted. Unlike pledge promises, unveil permissions are *not* monotonic:
+/// a later `unveil(2)` call for the same path replaces its permission set, so
+/// it can both widen and narrow the operations allowed on that path.
 ///
 /// # Examples
 ///
@@ -262,16 +280,19 @@ impl Not for Permissions {
 /// raw byte slice. Paths are subject to native OpenBSD semantics: they need not
 /// be valid UTF-8, but they must not contain an interior NUL byte.
 ///
-/// A rule may be added repeatedly; rules accumulate. The final component of a
-/// path may legitimately not exist yet (it is remembered by name), but a
-/// nonexistent *directory* component fails with [`Errno::ENOENT`].
+/// A rule may be added repeatedly; a later call for the same path *replaces*
+/// the earlier permission set rather than adding to it (see [`Permissions`]).
+/// The final component of a path may legitimately not exist yet (it is
+/// remembered by name), but a nonexistent *directory* component fails with
+/// [`Errno::ENOENT`].
 ///
 /// # Errors
 ///
 /// Errors if `unveil(2)` does: [`Errno::EPERM`] if the configuration is already
-/// locked or the change would increase permissions in a way the kernel
-/// disallows, [`Errno::ENOENT`] for a missing directory component,
-/// [`Errno::EINVAL`] for an empty or invalid path or interior NUL.
+/// locked with [`lock_unveil`], [`Errno::ENOENT`] for a missing directory
+/// component, or [`Errno::EINVAL`] for an invalid permission string or an
+/// interior NUL byte in the path. A call is not rejected merely for widening
+/// the permissions of a path.
 ///
 /// # Examples
 ///

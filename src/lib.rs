@@ -1,3 +1,17 @@
+// Copyright 2024-2026 Zack Newman and David Uhden Collado
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Idiomatic, OpenBSD-only Rust bindings for the security facilities that are
 //! unique to [OpenBSD](https://www.openbsd.org/):
 //!
@@ -251,9 +265,10 @@ pub use crate::{
     memory::{explicit_bzero, freezero, mimmutable, timingsafe_bcmp, timingsafe_memcmp},
     pledge::{Promise, Promises, pledge, pledge_both, pledge_child, pledge_parts, pledge_raw},
     privileges::{
-        Account, Gid, GroupPolicy, Groups, NGROUPS_MAX, PrivDropError, PrivDropStep, Uid,
-        account_by_name, drop_privileges, drop_privileges_to, drop_privileges_with, get_res_gid,
-        get_res_uid, groups, init_groups, set_groups, set_res_gid, set_res_uid,
+        Account, Gid, GroupPolicy, Groups, LOGIN_NAME_MAX, NGROUPS_MAX, PrivDropError,
+        PrivDropStep, Uid, Verification, account_by_name, drop_privileges, drop_privileges_to,
+        drop_privileges_with, get_res_gid, get_res_uid, groups, init_groups, set_groups,
+        set_res_gid, set_res_uid,
     },
     process::{
         DaemonOptions, PATH_MAX, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
