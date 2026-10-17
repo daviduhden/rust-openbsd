@@ -7,10 +7,10 @@
 //!
 //! Every call is *monotonic*: it may only reduce the available promises.
 //! Attempts to increase them fail with [`Errno::EPERM`] (unless the
-//! [`Promise::Error`] promise is active, in which case the increase is silently
-//! ignored). Once removed, a promise can never be regained; there is
-//! deliberately no bracket combinator here, because the restriction cannot be
-//! undone.
+//! `error` promise is active, in which case the increase is silently ignored).
+//! That promise is exposed only without `openbsd-8-0`. Once removed, a promise
+//! can never be regained; there is deliberately no bracket combinator here,
+//! because the restriction cannot be undone.
 //!
 //! The second argument of `pledge(2)`, the *exec promises*, restricts programs
 //! started later with [`execve(2)`](https://man.openbsd.org/execve.2). See
@@ -58,8 +58,10 @@ pub enum Promise {
     /// `drm`: `drm(4)` `ioctl` operations.
     Drm,
     /// `error`: return `ENOSYS` on violations instead of being killed.
+    #[cfg(not(feature = "openbsd-8-0"))]
     Error,
     /// `exec`: execute processes with `execve(2)`.
+    #[cfg(not(feature = "openbsd-8-0"))]
     Exec,
     /// `fattr`: change `struct stat` fields of files.
     Fattr,
@@ -114,9 +116,13 @@ pub enum Promise {
 }
 
 impl Promise {
-    /// Every promise accepted by the kernel, in the order used by
+    /// Every promise exposed for the selected API version, in the order used by
     /// `kern_pledge.c`.
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; if cfg!(feature = "openbsd-8-0") {
+        33
+    } else {
+        35
+    }] = [
         Self::Audio,
         Self::Bpf,
         Self::Chown,
@@ -125,7 +131,9 @@ impl Promise {
         Self::Dns,
         Self::Dpath,
         Self::Drm,
+        #[cfg(not(feature = "openbsd-8-0"))]
         Self::Error,
+        #[cfg(not(feature = "openbsd-8-0"))]
         Self::Exec,
         Self::Fattr,
         Self::Flock,
@@ -174,7 +182,9 @@ impl Promise {
             Self::Dns => "dns",
             Self::Dpath => "dpath",
             Self::Drm => "drm",
+            #[cfg(not(feature = "openbsd-8-0"))]
             Self::Error => "error",
+            #[cfg(not(feature = "openbsd-8-0"))]
             Self::Exec => "exec",
             Self::Fattr => "fattr",
             Self::Flock => "flock",
@@ -235,7 +245,9 @@ impl Promise {
             Self::Dns => 0x20,
             Self::Dpath => 0x40,
             Self::Drm => 0x80,
+            #[cfg(not(feature = "openbsd-8-0"))]
             Self::Error => 0x100,
+            #[cfg(not(feature = "openbsd-8-0"))]
             Self::Exec => 0x200,
             Self::Fattr => 0x400,
             Self::Flock => 0x800,
@@ -706,7 +718,9 @@ pub fn pledge_child(execpromises: &Promises) -> Result<(), Errno> {
 ///
 /// ```no_run
 /// # use rust_openbsd::{pledge_both, Promise, Promises};
-/// let current = Promises::new([Promise::Stdio, Promise::Proc, Promise::Exec]);
+/// let current = Promises::new([Promise::Stdio, Promise::Proc]);
+/// # #[cfg(not(feature = "openbsd-8-0"))]
+/// let current = current.with(Promise::Exec);
 /// let exec = Promises::new([Promise::Stdio]);
 /// assert!(pledge_both(&current, &exec).is_ok());
 /// ```

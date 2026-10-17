@@ -61,9 +61,12 @@ The second argument of `pledge(2)` restricts programs executed later via
 use rust_openbsd::{pledge_both, pledge_child, Promise, Promises};
 
 fn main() -> Result<(), rust_openbsd::Errno> {
-    // children may only use stdio; we keep stdio, rpath, proc and exec
+    // Children may only use stdio. Legacy kernels require Exec to execute.
+    let current = Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc]);
+    #[cfg(not(feature = "openbsd-8-0"))]
+    let current = current.with(Promise::Exec);
     pledge_both(
-        &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
+        &current,
         &Promises::new([Promise::Stdio]),
     )?;
 
@@ -125,13 +128,24 @@ provide.
 
 ### Notes
 
-* The [`Promise::Error`] promise changes violations from aborting the process to
-  returning `ENOSYS`; promise increases are then silently ignored.
+* Without `openbsd-8-0`, the [`Promise::Error`] promise changes violations
+  from aborting the process to returning `ENOSYS`; promise increases are
+  then silently ignored.
 * The `tmppath` promise has been removed from OpenBSD (`pledge(2)` returns
   `EINVAL` for it) and is deliberately not exposed. Use `rpath`, `wpath`, and
   `cpath` together with an `unveil` rule instead.
 * The [`Promise`] enumeration matches the promise list accepted by the kernel on
-  OpenBSD 7.9 and OpenBSD-current.
+  OpenBSD 7.9; the OpenBSD 8.0 option excludes `exec` and `error`.
+
+With `openbsd-8-0` enabled, the typed pledge inventory excludes `exec` and
+`error`. Without that option, both legacy promises remain available. Raw
+pledge interfaces continue to pass strings to the kernel without filtering.
+
+Excluding these names from the typed API does not change kernel behavior.
+On kernels requiring `exec`, a process pledged without it cannot execute
+another program. The execution-promises examples require that kernel
+capability and are not a replacement for it.
+
 
 ## unveil
 

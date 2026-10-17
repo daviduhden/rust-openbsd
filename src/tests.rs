@@ -17,10 +17,17 @@ use crate::{
     unveil::{Permission, Permissions, permissions_from_str},
 };
 
-/// The native promise enumeration must cover exactly the kernel table.
+/// The promise enumeration must cover the selected API version.
 #[test]
 fn promise_table_is_complete() {
+    #[cfg(not(feature = "openbsd-8-0"))]
     assert_eq!(Promise::ALL.len(), 35);
+    #[cfg(feature = "openbsd-8-0")]
+    {
+        assert_eq!(Promise::ALL.len(), 33);
+        assert_eq!(Promise::from_name("exec"), None);
+        assert_eq!(Promise::from_name("error"), None);
+    }
     for promise in Promise::ALL {
         assert_eq!(
             Promise::from_name(promise.name()),
