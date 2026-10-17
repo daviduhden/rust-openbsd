@@ -108,10 +108,13 @@
 //! ```no_run
 //! use rust_openbsd::{pledge_both, Promise, Promises};
 //!
-//! // The current process keeps the ability to execute and read paths; any
-//! // program it later execs starts with only "stdio".
+//! // Legacy kernels require Exec to execute another program.
+//! // Any program executed later starts with only "stdio".
+//! let current = Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc]);
+//! #[cfg(not(feature = "openbsd-8-0"))]
+//! let current = current.with(Promise::Exec);
 //! pledge_both(
-//!     &Promises::new([Promise::Stdio, Promise::Rpath, Promise::Proc, Promise::Exec]),
+//!     &current,
 //!     &Promises::new([Promise::Stdio]),
 //! )?;
 //! # Ok::<(), rust_openbsd::Errno>(())

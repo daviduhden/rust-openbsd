@@ -131,6 +131,7 @@ fn child_exec_increase_is_eperm() {
 /// The `error` promise turns a violation into `ENOSYS` instead of `SIGABRT`.
 #[test]
 #[ignore = "isolated child process"]
+#[cfg(not(feature = "openbsd-8-0"))]
 fn child_error_promise_returns_enosys() {
     assert_eq!(
         pledge(&Promises::new([Promise::Stdio, Promise::Error])),
@@ -144,6 +145,7 @@ fn child_error_promise_returns_enosys() {
 /// The `error` promise also makes promise increases silently succeed.
 #[test]
 #[ignore = "isolated child process"]
+#[cfg(not(feature = "openbsd-8-0"))]
 fn child_error_promise_ignores_increase() {
     assert_eq!(
         pledge(&Promises::new([Promise::Stdio, Promise::Error])),
@@ -289,11 +291,13 @@ fn empty_promise_set_aborts_on_activity() {
 }
 
 #[test]
+#[cfg(not(feature = "openbsd-8-0"))]
 fn error_promise_returns_enosys() {
     assert_success(&run_child("child_error_promise_returns_enosys"));
 }
 
 #[test]
+#[cfg(not(feature = "openbsd-8-0"))]
 fn error_promise_ignores_promise_increase() {
     assert_success(&run_child("child_error_promise_ignores_increase"));
 }

@@ -133,4 +133,5 @@ std = ["alloc"]
 # Bind interfaces that first appeared in OpenBSD 8.0. Enabling this feature
 # makes the crate require OpenBSD 8.0 or later, because the added symbols do
 # not exist in OpenBSD 7.9's libc.
+# Also exclude the legacy exec and error promises from the typed API.
 openbsd-8-0 = []
