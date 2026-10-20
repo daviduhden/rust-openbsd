@@ -656,7 +656,7 @@ test time, skipped when `cc` is unavailable.
 
 ## Continuous integration
 
-GitHub Actions boots a real OpenBSD 7.9 virtual machine
+GitHub Actions boots a real OpenBSD 8.0 virtual machine
 (`vmactions/openbsd-vm`), on both amd64 and arm64, for every push to `main` and
 every pull request, and runs the full validation inside it:
 

@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  openbsd-79-amd64:
-    name: OpenBSD 7.9 (amd64)
+  openbsd-80-amd64:
+    name: OpenBSD 8.0 (amd64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -26,10 +26,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build and test on OpenBSD 7.9
-        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
+      - name: Build and test on OpenBSD 8.0
+        uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3  # v1.4.9
         with:
-          release: "7.9"
+          release: "8.0"
           sync-time: true
           copyback: false
           prepare: &vm-prepare |
@@ -68,16 +68,15 @@ jobs:
 
             cargo fmt --all -- --check
             # Clippy only type-checks, so it can cover every feature, including
-            # `openbsd-8-0`, whose getexecpath(3) symbol does not exist in
-            # OpenBSD 7.9's libc and therefore must not be *linked* here.
+            # `openbsd-8-0`.
             cargo clippy --all-targets --all-features -- -D warnings
             # Linked test binaries run with the default feature set so that the
-            # OpenBSD 7.9 libc can resolve every symbol.
+            # 7.9-compatible surface stays exercised.
             cargo test -- --nocapture
             cargo test
 
             # Feature combinations, including no_std without allocation and the
-            # type-checked OpenBSD 8.0 surface.
+            # OpenBSD 8.0 surface.
             cargo build --no-default-features
             cargo build --no-default-features --features alloc
             cargo build --features openbsd-8-0
@@ -108,8 +107,8 @@ jobs:
             fi
             echo "Privileged tests executed and passed."
 
-  openbsd-79-arm64:
-    name: OpenBSD 7.9 (arm64)
+  openbsd-80-arm64:
+    name: OpenBSD 8.0 (arm64)
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -120,10 +119,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build and test on OpenBSD 7.9
-        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945  # v1.4.8
+      - name: Build and test on OpenBSD 8.0
+        uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3  # v1.4.9
         with:
-          release: "7.9"
+          release: "8.0"
           arch: aarch64
           sync-time: true
           copyback: false
