@@ -662,12 +662,16 @@ every pull request, and runs the full validation inside it:
 
 * installs the native OpenBSD Rust toolchain with `pkg_add`;
 * `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
-  and `cargo test`, executed as an unprivileged `builder` user;
-* the `no_std` and `alloc` feature combinations;
+  and `cargo test --all-features`, executed as an unprivileged `builder` user;
+* the default, `no_std` and `alloc` feature combinations;
 * `cargo doc` and `cargo package`;
 * runs the test suite again as `root`, and fails if the privilege-dropping tests
   are skipped or do not pass, so the real, effective and saved UID/GID drops and
   the inability to regain root are exercised against the actual kernel.
+
+The test binaries enable `openbsd-8-0`, because OpenBSD 8.0 removed the `exec`
+and `error` promises; this also runs the `getexecpath(3)` tests against the real
+kernel.
 
 Every third-party action is pinned to a full commit hash and GitHub token
 permissions are minimal.

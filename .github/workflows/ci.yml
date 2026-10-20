@@ -70,10 +70,14 @@ jobs:
             # Clippy only type-checks, so it can cover every feature, including
             # `openbsd-8-0`.
             cargo clippy --all-targets --all-features -- -D warnings
-            # Linked test binaries run with the default feature set so that the
-            # 7.9-compatible surface stays exercised.
-            cargo test -- --nocapture
-            cargo test
+            # Keep the 7.9-compatible default feature set compiling; its kernel
+            # tests cannot run on 8.0 because exec and error were removed.
+            cargo check --all-targets
+            # OpenBSD 8.0 removed the exec and error promises, so the kernel
+            # tests run with the openbsd-8-0 feature set. This also exercises
+            # getexecpath(3).
+            cargo test --all-features -- --nocapture
+            cargo test --all-features
 
             # Feature combinations, including no_std without allocation and the
             # OpenBSD 8.0 surface.
@@ -95,7 +99,7 @@ jobs:
             fi
 
             echo "== Privileged tests as root =="
-            if ! cargo test -- --nocapture > /tmp/openbsd-root.log 2>&1; then
+            if ! cargo test --all-features -- --nocapture > /tmp/openbsd-root.log 2>&1; then
                 cat /tmp/openbsd-root.log
                 echo "ERROR: privileged test run failed" >&2
                 exit 1
