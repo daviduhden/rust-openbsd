@@ -54,10 +54,26 @@ fn child_process_state() {
     assert_eq!(progname(), c"rust-openbsd-progname");
 
     // A high threshold closes nothing that the test harness uses.
-    close_from(10_000);
+    assert!(close_from(10_000).is_ok());
     assert!(dtable_count() > 0, "the standard descriptors were closed");
 
     exit_now(0);
+}
+
+/// `closefrom(2)` reports `EINVAL` for a negative threshold and accepts a
+/// threshold above every open descriptor. CI runs this on OpenBSD 8.0 for amd64
+/// and arm64; OpenBSD 7.9 is not in the CI matrix and must be checked manually.
+#[test]
+#[ignore = "isolated child process"]
+fn child_close_from_error_contract() {
+    assert_eq!(close_from(-1), Err(rust_openbsd::Errno::EINVAL));
+    assert!(close_from(10_000).is_ok());
+    exit_now(0);
+}
+
+#[test]
+fn close_from_reports_documented_errors() {
+    assert_success(&run_child("child_close_from_error_contract"));
 }
 
 /// On success `daemonize_with` never returns: the original process exits and

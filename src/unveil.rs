@@ -50,14 +50,15 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Permission {
     /// `c`: create and remove operations (corresponds to the `cpath` and
-    /// `dpath` promises).
+    /// `dpath` promises, and permits `connect(2)` on `AF_UNIX` sockets).
     Create,
-    /// `x`: execute operations (corresponds to the `exec` promise).
+    /// `x`: execute operations (corresponds to the `exec` promise on kernels
+    /// that still provide it).
     Execute,
     /// `r`: read operations (corresponds to the `rpath` promise).
     Read,
     /// `w`: write operations (corresponds to the `wpath`, `chown`, and `fattr`
-    /// promises).
+    /// promises, and permits `connect(2)` on `AF_UNIX` sockets).
     Write,
 }
 
@@ -290,7 +291,8 @@ impl Not for Permissions {
 ///
 /// Errors if `unveil(2)` does: [`Errno::EPERM`] if the configuration is already
 /// locked with [`lock_unveil`], [`Errno::ENOENT`] for a missing directory
-/// component, or [`Errno::EINVAL`] for an invalid permission string or an
+/// component, [`Errno::E2BIG`] when the per-process unveiled-path or name limit
+/// is exhausted, or [`Errno::EINVAL`] for an invalid permission string or an
 /// interior NUL byte in the path. A call is not rejected merely for widening
 /// the permissions of a path.
 ///
@@ -320,7 +322,8 @@ pub fn unveil<P: CStrHelper>(path: P, permissions: Permissions) -> Result<(), Er
 ///
 /// # Errors
 ///
-/// Stops at the first failing rule; see [`unveil`].
+/// Stops at the first failing rule; rules installed before the failure remain
+/// in effect and cannot be removed. See [`unveil`].
 ///
 /// # Examples
 ///
@@ -369,7 +372,10 @@ pub fn lock_unveil() -> Result<(), Errno> {
 /// Installs every rule in `rules` and then locks the configuration.
 ///
 /// This is equivalent to [`unveil_paths`] followed by [`lock_unveil`], but
-/// expresses the intended "set up and close" transition in one call.
+/// expresses the intended "set up and close" transition in one call. The
+/// transition is not atomic: if a rule fails, the rules installed before it
+/// remain and the configuration is **not** locked (leaving the caller to decide
+/// whether to retry, lock, or exit).
 ///
 /// # Errors
 ///

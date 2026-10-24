@@ -69,12 +69,17 @@ pub fn is_setugid() -> bool {
 ///
 /// Errors if `getpeereid(3)` does: for example [`Errno::EBADF`] for an invalid
 /// descriptor, [`Errno::ENOTSOCK`] for a regular file, [`Errno::EOPNOTSUPP`]
-/// for a non-Unix-domain socket, or [`Errno::ENOTCONN`] for an unconnected
-/// socket.
+/// for a non-Unix-domain socket, [`Errno::ENOTCONN`] for an unconnected
+/// socket, or [`Errno::ENOBUFS`] when the kernel lacks resources.
 ///
 /// # Pledge
 ///
-/// No pledge promise covers this call, so it must be used before pledging.
+/// `getpeereid(3)` is implemented with
+/// [`getsockopt(2)`](https://man.openbsd.org/getsockopt.2) (`SO_PEERCRED`).
+/// On current OpenBSD the call therefore needs the `stdio` promise plus one of
+/// `unix`, `inet`, or `dns`; with only `stdio` it takes the pledge-violation
+/// path. Calling it before pledging is the conservative choice and is the only
+/// behavior this crate documents as guaranteed across versions.
 #[expect(unsafe_code, reason = "getpeereid(3) writes through pointers")]
 pub fn get_peer_credentials(fd: c_int) -> Result<(Uid, Gid), Errno> {
     let mut euid = 0_u32;

@@ -27,7 +27,8 @@ use crate::{
     DaemonOptions, Errno, MAX_ENTROPY, PASSWORD_LEN, PROCTITLE_MAX, Rtable, STDERR_FILENO,
     STDIN_FILENO, STDOUT_FILENO, default_daemon_options,
     pledge::{PLEDGE_BUFFER_LEN, Promise, Promises, promises_from_str},
-    privileges::{Account, Gid, LOGIN_NAME_MAX, PrivDropError, Uid},
+    privileges::{Account, Gid, LOGIN_NAME_MAX, PrivDropError, Uid, ensure_unprivileged},
+    process::child_transition_permitted,
     unveil::{Permission, Permissions, permissions_from_str},
 };
 
@@ -192,6 +193,50 @@ fn daemon_options_default() {
     assert!(options.change_directory_to_root);
     assert!(options.redirect_standard_streams);
     assert_eq!(options, default_daemon_options());
+}
+
+/// Every requested daemon transition must succeed before the body runs.
+#[test]
+fn daemonize_requires_every_requested_transition() {
+    let both = DaemonOptions {
+        change_directory_to_root: true,
+        redirect_standard_streams: true,
+    };
+    assert!(!child_transition_permitted(both, false, true));
+    assert!(!child_transition_permitted(both, true, false));
+    assert!(child_transition_permitted(both, true, true));
+
+    let neither = DaemonOptions {
+        change_directory_to_root: false,
+        redirect_standard_streams: false,
+    };
+    assert!(child_transition_permitted(neither, false, false));
+
+    let chdir_only = DaemonOptions {
+        change_directory_to_root: true,
+        redirect_standard_streams: false,
+    };
+    assert!(!child_transition_permitted(chdir_only, false, false));
+    assert!(child_transition_permitted(chdir_only, true, false));
+}
+
+/// Name-based drops must reject a root UID or a root primary GID.
+#[test]
+fn named_drops_reject_root_identity() {
+    let Ok(uid_root) = Account::new(c"root", Uid::ROOT, Gid(1)) else {
+        return;
+    };
+    assert_eq!(ensure_unprivileged(&uid_root), Err(PrivDropError::RootAccount));
+
+    let Ok(gid_root) = Account::new(c"service", Uid(1000), Gid::ROOT) else {
+        return;
+    };
+    assert_eq!(ensure_unprivileged(&gid_root), Err(PrivDropError::RootAccount));
+
+    let Ok(unprivileged) = Account::new(c"service", Uid(1000), Gid(1000)) else {
+        return;
+    };
+    assert_eq!(ensure_unprivileged(&unprivileged), Ok(()));
 }
 
 /// Documented limits and descriptor numbers match the OpenBSD headers.

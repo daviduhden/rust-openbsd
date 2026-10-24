@@ -71,11 +71,10 @@ jobs:
             # `openbsd-8-0`.
             cargo clippy --all-targets --all-features -- -D warnings
             # Keep the 7.9-compatible default feature set compiling; its kernel
-            # tests cannot run on 8.0 because exec and error were removed.
+            # tests are not run on 8.0 because the typed inventory differs.
             cargo check --all-targets
-            # OpenBSD 8.0 removed the exec and error promises, so the kernel
-            # tests run with the openbsd-8-0 feature set. This also exercises
-            # getexecpath(3).
+            # The tests run with the openbsd-8-0 feature set, which excludes the
+            # legacy exec and error promises. This also exercises getexecpath(3).
             cargo test --all-features -- --nocapture
             cargo test --all-features
 

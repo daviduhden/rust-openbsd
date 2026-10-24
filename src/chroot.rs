@@ -58,6 +58,12 @@ fn chdir_raw(path: &CStr) -> Result<(), Errno> {
 /// raw byte slice, and need not be valid UTF-8. It must not contain an interior
 /// NUL byte.
 ///
+/// # Pledge
+///
+/// [`chdir(2)`](https://man.openbsd.org/chdir.2) is covered by the `rpath`
+/// promise. Calling this after pledging therefore requires `rpath`; it is not
+/// exempt like [`chroot`](crate::chroot()).
+///
 /// # Errors
 ///
 /// Errors if `chdir(2)` does.
@@ -82,7 +88,10 @@ pub fn chdir<P: CStrHelper>(path: P) -> Result<(), Errno> {
 ///
 /// # Errors
 ///
-/// Errors if `chroot(2)` does. [`Errno::EPERM`] without sufficient privileges.
+/// Errors if `chroot(2)` does. [`Errno::EPERM`] is reported without sufficient
+/// privileges; the kernel may also report [`Errno::ENOENT`],
+/// [`Errno::ENOTDIR`], [`Errno::EACCES`], or [`Errno::ELOOP`] for an
+/// unusable path.
 ///
 /// # Examples
 ///
@@ -112,8 +121,16 @@ pub fn chroot<P: CStrHelper>(path: P) -> Result<(), Errno> {
 ///
 /// The transition is irreversible and only partially protected on failure: if
 /// `chroot(2)` succeeds but `chdir(2)` fails, the process is already inside the
-/// new root and cannot simply be restored. Any error from this function must
-/// therefore be treated as fatal for the current process.
+/// new root and cannot simply be restored. The returned [`Errno`] does not say
+/// which of the two calls failed, so any error from this function must be
+/// treated as fatal for the current process.
+///
+/// # Pledge
+///
+/// `chroot(2)` has no pledge promise and must be performed before pledging;
+/// see the module documentation. Resolve any account to which privileges will
+/// later be dropped *before* entering the new root, because the password
+/// database may not be reachable inside it.
 ///
 /// # Errors
 ///

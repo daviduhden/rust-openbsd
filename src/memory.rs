@@ -55,7 +55,16 @@ use crate::{
 /// [`minherit(2)`](https://man.openbsd.org/minherit.2) operations on those
 /// pages fail with [`Errno::EPERM`]. Reads and writes to the memory itself
 /// remain allowed; the mechanism protects the *mapping*, not the contents. The
-/// change is permanent.
+/// change is permanent for mappings that are present when the call is made;
+/// unmapped pages in the range are skipped by the kernel and do not become
+/// immutable if they are mapped later.
+///
+/// An empty slice is a no-op and returns `Ok(())` without entering the kernel.
+///
+/// Because this function takes a slice, it cannot describe a range that
+/// contains an unmapped gap: every byte of a valid slice must be readable. The
+/// kernel's hole-skipping behavior applies to raw `mimmutable(2)` calls over
+/// such a range; do not construct a slice over unmapped memory to model one.
 ///
 /// # Safety
 ///
@@ -70,20 +79,28 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Errors if `mimmutable(2)` does: [`Errno::EINVAL`] for an invalid range, or
-/// [`Errno::EPERM`] if a page inherits `MAP_INHERIT_ZERO`.
+/// Errors if `mimmutable(2)` does: [`Errno::EINVAL`] for an invalid or wrapping
+/// range, or [`Errno::EPERM`] if a page inherits `MAP_INHERIT_ZERO`. Ranges
+/// that lie entirely outside the address space of the process are not
+/// necessarily rejected; the kernel may report success after clipping them.
 ///
 /// # Pledge
 ///
 /// Allowed under the `stdio` promise.
 #[expect(unsafe_code, reason = "mimmutable(2) takes a raw pointer")]
 pub unsafe fn mimmutable(bytes: &[u8]) -> Result<(), Errno> {
+    // `ALIGN_ADDR` in the kernel turns a zero-length request with an unaligned
+    // pointer into a whole page, which would freeze memory the caller never
+    // named. An empty range is defined here as a no-op instead.
+    if bytes.is_empty() {
+        return Ok(());
+    }
     // SAFETY:
     // The caller guarantees that the page-rounded region overlapping `bytes`
-    // is a dedicated mapping. `bytes` is a live slice and `len` is exactly its
-    // length, so the pointer and length describe a valid region for the
-    // duration of the call. `mimmutable(2)` only changes page metadata, never
-    // the contents.
+    // is a dedicated mapping. `bytes` is a live, non-empty slice and `len` is
+    // exactly its length, so the pointer and length describe a valid region
+    // for the duration of the call. `mimmutable(2)` only changes page
+    // metadata, never the contents.
     let code = unsafe { ffi::mimmutable(bytes.as_ptr().cast::<c_void>().cast_mut(), bytes.len()) };
     if code == SUCCESS {
         Ok(())
@@ -113,15 +130,19 @@ pub fn explicit_bzero(buf: &mut [u8]) {
 /// Zeroes and releases a `malloc(3)`-allocated region, as
 /// [`freezero(3)`](https://man.openbsd.org/freezero.3).
 ///
-/// The region of the given length (which must match the allocation) is
-/// overwritten with zeroes and then freed.
+/// The first `len` bytes of the allocation are overwritten with zeroes and the
+/// allocation is then freed.
 ///
 /// # Safety
 ///
 /// Ownership of `ptr` transfers to this function: the pointer must have been
-/// returned by `malloc(3)` (or a compatible allocator) with at least `len`
-/// bytes, and must not be used or freed again afterwards. `len` must match the
-/// allocation size.
+/// returned by `malloc(3)` (or a compatible allocator) and must not be used or
+/// freed again afterwards. `len` must be less than or equal to the allocated
+/// size; the native allocator aborts (or, in its early fallback path, performs
+/// an out-of-bounds write) when `len` is larger. A null pointer is accepted by
+/// the native function as a no-op, but callers should not rely on that here.
+/// Never pass memory from the Rust allocator, `mmap(2)`, the stack, or static
+/// storage; deallocation must use the `free(3)`-compatible allocator.
 #[expect(unsafe_code, reason = "freezero(3) takes a raw pointer")]
 #[inline]
 pub unsafe fn freezero(ptr: *mut u8, len: usize) {
@@ -134,10 +155,10 @@ pub unsafe fn freezero(ptr: *mut u8, len: usize) {
 /// Constant-time equality of two byte buffers, as
 /// [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3).
 ///
-/// The comparison time depends only on the length of the shorter input, never
-/// on where the first difference occurs, so it is suitable for comparing
-/// secrets (hashes, MACs, keys). Buffers of different lengths are simply
-/// unequal (a length is not secret material).
+/// The comparison time depends only on the input length, never on where the
+/// first difference occurs, so it is suitable for comparing secrets (hashes,
+/// MACs, keys). Buffers of different lengths are simply unequal and are not
+/// compared at all; a length is not treated as secret material.
 #[expect(unsafe_code, reason = "timingsafe_bcmp(3) takes raw pointers")]
 #[must_use]
 pub fn timingsafe_bcmp(a: &[u8], b: &[u8]) -> bool {

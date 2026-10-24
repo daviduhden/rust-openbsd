@@ -16,9 +16,14 @@
 //!
 //! Everything here is a direct `extern "C"` declaration; the crate does not
 //! depend on a platform-bindings crate. The `unsafe` surface is intentionally
-//! tiny: functions that cannot dereference a pointer are declared `safe`, and
-//! the rest are wrapped once, with documented safety invariants, in the
-//! modules that use them.
+//! tiny: a function is declared `safe` only when it has no memory-safety
+//! precondition for the caller *and* no pointer argument that could be
+//! dereferenced incorrectly. Calls that change process state without touching
+//! memory (for example `setresuid`) are safe; `fork`, which has no memory
+//! precondition but creates a child with severe post-fork constraints, is
+//! declared `unsafe` so that the call site acknowledges them. Everything else
+//! is wrapped once, with documented safety invariants, in the modules that use
+//! it.
 //!
 //! The [`Passwd`] layout matches OpenBSD's
 //! [`<pwd.h>`](https://github.com/openbsd/src/blob/master/include/pwd.h).
@@ -30,9 +35,11 @@ pub(crate) const SUCCESS: c_int = 0;
 
 /// `struct passwd` as defined by OpenBSD's `<pwd.h>`.
 ///
-/// Only the fields this crate reads are exposed; the layout must match the C
-/// definition exactly because the structure is filled in by
-/// [`getpwnam_r`](ffi::getpwnam_r) and [`getpwuid_r`](ffi::getpwuid_r).
+/// The full layout is required because the structure is filled in by
+/// [`getpwnam_r`](ffi::getpwnam_r). Fields that this crate does not read are
+/// still present to preserve the ABI; do not delete or reorder them. `uid` and
+/// `gid` are 32-bit `uid_t`/`gid_t`; `change` and `expire` are 64-bit `time_t`
+/// on every supported OpenBSD target.
 #[repr(C)]
 pub(crate) struct Passwd {
     /// Login name.
@@ -91,6 +98,14 @@ unsafe extern "C" {
 
     /// [`getgroups(2)`](https://man.openbsd.org/getgroups.2).
     pub(crate) fn getgroups(size: c_int, gids: *mut u32) -> c_int;
+
+    /// [`getgrouplist(3)`](https://man.openbsd.org/getgrouplist.3).
+    pub(crate) fn getgrouplist(
+        name: *const c_char,
+        basegid: u32,
+        groups: *mut u32,
+        ngroups: *mut c_int,
+    ) -> c_int;
 
     /// [`initgroups(3)`](https://man.openbsd.org/initgroups.3).
     pub(crate) fn initgroups(name: *const c_char, basegid: u32) -> c_int;
@@ -160,9 +175,12 @@ unsafe extern "C" {
 
     /// [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3).
     ///
-    /// Variadic, like the C function. Callers must always pass a fixed `"%s"`
+    /// Variadic, like the C function. Callers must either pass a fixed `"%s"`
     /// format and the title as the data argument, as
-    /// [`set_proctitle`](crate::process::set_proctitle) does.
+    /// [`set_proctitle`](crate::process::set_proctitle) does, or pass `NULL`
+    /// with no varargs to reset the title, as
+    /// [`reset_proctitle`](crate::process::reset_proctitle) does. Caller data
+    /// must never be used as the format string.
     pub(crate) fn setproctitle(fmt: *const c_char, ...);
 
     /// [`getprogname(3)`](https://man.openbsd.org/setprogname.3).

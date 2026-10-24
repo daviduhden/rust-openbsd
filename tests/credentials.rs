@@ -27,7 +27,11 @@
 
 use std::os::fd::AsRawFd;
 
-use rust_openbsd::{Errno, Gid, Uid, get_peer_credentials, is_setugid};
+use rust_openbsd::{Errno, Gid, Promise, Promises, Uid, get_peer_credentials, is_setugid, pledge};
+
+mod common;
+
+use common::{assert_sigabrt, assert_success, exit_now, run_child};
 
 #[test]
 fn the_test_binary_is_not_set_id_tainted() {
@@ -48,4 +52,43 @@ fn peer_credentials_match_the_process_credentials() {
 #[test]
 fn invalid_descriptors_are_reported() {
     assert!(matches!(get_peer_credentials(-1), Err(Errno::EBADF)));
+}
+
+/// `getpeereid(3)` is a `getsockopt(2)` call; `stdio` plus `unix` must allow it.
+#[test]
+#[ignore = "isolated child process"]
+fn child_peer_credentials_with_unix_promise() {
+    let (local, _remote) = std::os::unix::net::UnixStream::pair().expect("socketpair");
+    if pledge(&Promises::new([Promise::Stdio, Promise::Unix])).is_err() {
+        exit_now(1);
+    }
+    match get_peer_credentials(local.as_raw_fd()) {
+        Ok((uid, gid)) if uid == Uid::geteuid() && gid == Gid::getegid() => exit_now(0),
+        Ok(_) => exit_now(2),
+        Err(_) => exit_now(3),
+    }
+}
+
+/// With only `stdio`, the `getsockopt(2)` path must be a pledge violation.
+#[test]
+#[ignore = "isolated child process"]
+fn child_peer_credentials_without_socket_promise_aborts() {
+    let (local, _remote) = std::os::unix::net::UnixStream::pair().expect("socketpair");
+    if pledge(&Promises::new([Promise::Stdio])).is_err() {
+        exit_now(1);
+    }
+    let _ = get_peer_credentials(local.as_raw_fd());
+    // The kernel should have aborted before this point. Exit with a normal
+    // status so the parent can distinguish the missing violation from SIGABRT.
+    exit_now(2);
+}
+
+#[test]
+fn peer_credentials_work_with_unix_promise() {
+    assert_success(&run_child("child_peer_credentials_with_unix_promise"));
+}
+
+#[test]
+fn peer_credentials_require_a_socket_promise() {
+    assert_sigabrt(&run_child("child_peer_credentials_without_socket_promise_aborts"));
 }

@@ -4,7 +4,7 @@ authors = [
   "David Uhden Collado <david@uhden.dev>",
 ]
 categories = ["external-ffi-bindings", "no-std::no-alloc", "os::unix-apis"]
-description = "OpenBSD-only bindings for pledge(2), unveil(2), chroot(2), and daemon-style privilege dropping."
+description = "OpenBSD-only bindings for pledge(2), unveil(2), chroot(2), privilege separation, process control, and OpenBSD-specific memory and cryptographic helpers."
 documentation = "https://docs.rs/rust-openbsd/latest/rust_openbsd/"
 edition = "2024"
 keywords = ["openbsd", "pledge", "unveil", "privsep", "security"]

@@ -261,13 +261,16 @@ impl Errno {
     #[inline]
     #[must_use]
     pub const fn from_raw(code: i32) -> Self {
+        // OpenBSD defines `1..=95` (`ELAST == EPROTO == 95`). Keep this
+        // range aligned with `LAST`; `errno_boundaries` in `src/tests.rs`
+        // checks the endpoint. A range pattern is used instead of a bounds
+        // check so that the const function stays const-compatible.
         match code {
-            // OpenBSD defines `1..=95` (`ELAST == EPROTO == 95`).
             ..=0 | 96.. => Self::Other,
             _ => {
                 // SAFETY:
-                // `Self` is `repr(i32)`, and the match arm above guarantees `code` is in the
-                // range of valid discriminants.
+                // `Self` is `repr(i32)` with contiguous discriminants, and the
+                // arm above guarantees `code` is a valid discriminant.
                 unsafe { mem::transmute::<i32, Self>(code) }
             }
         }

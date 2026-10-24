@@ -25,10 +25,17 @@
 //!   password key derivation.
 //!
 //! These call OpenBSD's implementations directly; no cryptographic code lives
-//! in this crate. Passwords cross the C string boundary as byte slices, so
-//! inputs containing an interior NUL byte are rejected with [`Errno::EINVAL`]
-//! rather than being silently truncated. Passwords are never logged or embedded
-//! in error values.
+//! in this crate. The `crypt_*` functions convert their arguments through
+//! [`CStrHelper`], so inputs containing an interior NUL byte are rejected with
+//! [`Errno::EINVAL`] rather than being silently truncated. [`bcrypt_pbkdf`] and
+//! [`bcrypt_pbkdf_into`] take length-delimited byte slices and therefore accept
+//! NUL bytes.
+//!
+//! Passwords are never logged or embedded in error values, but this crate
+//! cannot guarantee that every transient copy is erased: [`CStrHelper`] may
+//! place the password in a 1024-byte stack buffer or a heap `CString`, and the
+//! compiler may copy values. Use [`explicit_bzero`](crate::explicit_bzero) on
+//! native buffers you own when in-place erasure is required.
 
 use core::ffi::CStr;
 
@@ -153,10 +160,12 @@ pub fn crypt_newhash<P: CStrHelper, F: CStrHelper>(password: P, pref: F) -> Resu
 /// The salt should be random material such as the output of
 /// [`arc4_random_bytes`](crate::random::arc4_random_bytes). Higher `rounds`
 /// values make each attempt slower. The derivation is deterministic for
-/// identical inputs. An empty `key` is a harmless no-op.
+/// identical inputs. An empty `key` is a harmless no-op that skips native
+/// validation entirely.
 ///
 /// Unlike [`crypt_checkpass`], the password and salt are raw byte strings: they
-/// may contain NUL bytes.
+/// may contain NUL bytes. The derived key is left in `key`; the caller owns it
+/// and is responsible for erasing it when it is no longer needed.
 ///
 /// # Errors
 ///
@@ -197,7 +206,9 @@ pub fn bcrypt_pbkdf_into(
 /// Derives a key of `key_len` bytes from a password and salt, as
 /// [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3).
 ///
-/// See [`bcrypt_pbkdf_into`].
+/// See [`bcrypt_pbkdf_into`]. The returned buffer contains the derived key and
+/// is not zeroized on drop; erase it with
+/// [`explicit_bzero`](crate::explicit_bzero) if it must not remain in memory.
 ///
 /// # Errors
 ///

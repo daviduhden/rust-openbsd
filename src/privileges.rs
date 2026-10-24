@@ -37,8 +37,19 @@
 //! Credential changes are not generally reversible. If a step fails partway
 //! through, the process may already have reduced privileges and **must not**
 //! continue normal service execution: treat any [`PrivDropError`] as fatal for
-//! the current process. The error identifies the failing step and preserves the
-//! underlying [`Errno`].
+//! the current process. The error identifies the failing step and, where one
+//! exists, preserves the underlying [`Errno`].
+//!
+//! # Resolve before chroot
+//!
+//! [`account_by_name`] performs a password-database lookup, so it must run
+//! while the database is still reachable: before [`chroot()`](crate::chroot())
+//! and before a pledge that omits `getpw`. The [`Account`] value is inline and
+//! [`Copy`], so it can be passed to [`drop_privileges_to`] after the chroot.
+//! [`GroupPolicy::Initgroups`] additionally calls
+//! [`initgroups(3)`](https://man.openbsd.org/initgroups.3), which needs the
+//! group database at drop time; after a chroot that does not contain it, use
+//! [`GroupPolicy::PrimaryGroupOnly`] or drop privileges before the chroot.
 //!
 //! # Why not `setusercontext(3)`?
 //!
@@ -292,8 +303,9 @@ impl Account {
     ///
     /// # Errors
     ///
-    /// Returns [`PrivDropError::NameTooLong`] if `name` does not fit in
-    /// [`LOGIN_NAME_MAX`] bytes.
+    /// Returns [`PrivDropError::NameTooLong`] if `name` including its
+    /// terminating NUL does not fit in [`LOGIN_NAME_MAX`] bytes (the longest
+    /// accepted name is therefore 31 bytes).
     pub fn new(name: &CStr, uid: Uid, gid: Gid) -> Result<Self, PrivDropError> {
         let bytes = name.to_bytes();
         let name_len = u8::try_from(bytes.len())
@@ -346,7 +358,13 @@ impl Account {
         self.gid
     }
 
-    /// Returns `true` if the account is root.
+    /// Returns `true` if the account's user ID is [`Uid::ROOT`].
+    ///
+    /// Only the UID is checked. An account with a non-zero UID but a primary
+    /// group ID of zero is *not* considered root by this method, even though
+    /// dropping to it would leave the process with group-root privileges.
+    /// [`drop_privileges`] and [`drop_privileges_with`] reject that case as
+    /// well; [`drop_privileges_to`] does not.
     #[inline]
     #[must_use]
     pub const fn is_root(&self) -> bool {
@@ -398,7 +416,10 @@ pub enum GroupPolicy {
     /// [`initgroups(3)`](https://man.openbsd.org/initgroups.3).
     ///
     /// This is login-style behavior; use it only when the process genuinely
-    /// needs the account's group memberships.
+    /// needs the account's group memberships. The lookup needs the group
+    /// database at drop time, so an `initgroups` drop after a `chroot(2)` only
+    /// works if the new root contains that database. Verification compares the
+    /// observed groups with the membership reported by `getgrouplist(3)`.
     Initgroups,
 }
 
@@ -470,7 +491,8 @@ pub enum PrivDropError {
     NoSuchAccount,
     /// The login name does not fit in [`LOGIN_NAME_MAX`] bytes.
     NameTooLong,
-    /// The resolved account is root; refusing to "drop" to root.
+    /// The resolved account is privileged: its UID is root or its primary GID
+    /// is root.
     RootAccount,
     /// [`setgroups(2)`](https://man.openbsd.org/setgroups.2) failed.
     SetSupplementaryGroups(Errno),
@@ -489,6 +511,9 @@ pub enum PrivDropError {
     /// [`getgroups(2)`](https://man.openbsd.org/getgroups.2) failed during
     /// verification.
     GetGroups(Errno),
+    /// [`getgrouplist(3)`](https://man.openbsd.org/getgrouplist.3) failed while
+    /// computing the expected group membership during verification.
+    GetGroupList(Errno),
     /// The resulting credentials did not match the account.
     Verification(Verification),
 }
@@ -509,6 +534,7 @@ impl PrivDropError {
             Self::GetResUid(_)
             | Self::GetResGid(_)
             | Self::GetGroups(_)
+            | Self::GetGroupList(_)
             | Self::Verification(_) => PrivDropStep::Verify,
         }
     }
@@ -525,7 +551,8 @@ impl PrivDropError {
             | Self::SetResUid(errno)
             | Self::GetResUid(errno)
             | Self::GetResGid(errno)
-            | Self::GetGroups(errno) => Some(errno),
+            | Self::GetGroups(errno)
+            | Self::GetGroupList(errno) => Some(errno),
             Self::NoSuchAccount | Self::NameTooLong | Self::RootAccount | Self::Verification(_) => {
                 None
             }
@@ -543,7 +570,8 @@ impl Error for PrivDropError {
             | Self::SetResUid(errno)
             | Self::GetResUid(errno)
             | Self::GetResGid(errno)
-            | Self::GetGroups(errno) => Some(errno),
+            | Self::GetGroups(errno)
+            | Self::GetGroupList(errno) => Some(errno),
             Self::NoSuchAccount | Self::NameTooLong | Self::RootAccount | Self::Verification(_) => {
                 None
             }
@@ -557,7 +585,7 @@ impl Display for PrivDropError {
             Self::Lookup(errno) => write!(f, "cannot resolve account: {errno}"),
             Self::NoSuchAccount => f.write_str("no passwd(5) entry for the account"),
             Self::NameTooLong => f.write_str("login name does not fit in LOGIN_NAME_MAX bytes"),
-            Self::RootAccount => f.write_str("refusing to drop privileges to root"),
+            Self::RootAccount => f.write_str("refusing to drop privileges to a root account"),
             Self::SetSupplementaryGroups(errno) => write!(f, "setgroups(2) failed: {errno}"),
             Self::InitGroups(errno) => write!(f, "initgroups(3) failed: {errno}"),
             Self::SetResGid(errno) => write!(f, "setresgid(2) failed: {errno}"),
@@ -565,6 +593,7 @@ impl Display for PrivDropError {
             Self::GetResUid(errno) => write!(f, "getresuid(2) failed: {errno}"),
             Self::GetResGid(errno) => write!(f, "getresgid(2) failed: {errno}"),
             Self::GetGroups(errno) => write!(f, "getgroups(2) failed: {errno}"),
+            Self::GetGroupList(errno) => write!(f, "getgrouplist(3) failed: {errno}"),
             Self::Verification(verification) => verification.fmt(f),
         }
     }
@@ -673,13 +702,14 @@ pub fn get_res_gid() -> Result<(Gid, Gid, Gid), Errno> {
 /// Sets the supplementary group list to exactly `groups`, as
 /// [`setgroups(2)`](https://man.openbsd.org/setgroups.2).
 ///
-/// The kernel caps the list at [`NGROUPS_MAX`] entries. Passing an empty slice
-/// drops all supplementary groups.
+/// The list may contain at most [`NGROUPS_MAX`] entries. Passing an empty slice
+/// drops all supplementary groups. A longer list is rejected by the kernel with
+/// [`Errno::EINVAL`]; it is not silently truncated.
 ///
 /// # Errors
 ///
 /// Errors if `setgroups(2)` does, typically [`Errno::EPERM`] without
-/// sufficient privilege.
+/// sufficient privilege or [`Errno::EINVAL`] for an over-long list.
 #[expect(unsafe_code, reason = "setgroups(2) takes a raw pointer")]
 pub fn set_groups(groups: &[Gid]) -> Result<(), Errno> {
     let count = c_int::try_from(groups.len()).map_err(|_| Errno::EINVAL)?;
@@ -788,8 +818,11 @@ fn resolve(name: &CStr, buf: &mut [u8]) -> Result<Option<Account>, Errno> {
     // SAFETY:
     // `pw_name` points into `buf` at a NUL-terminated string that is live for as long as `buf`.
     let name = unsafe { CStr::from_ptr(passwd.name) };
-    let account =
-        Account::new(name, Uid(passwd.uid), Gid(passwd.gid)).map_err(|_| Errno::ERANGE)?;
+    // A login name that exceeds `LOGIN_NAME_MAX` is a property of the entry,
+    // not of the scratch buffer. Report it as `ENAMETOOLONG` so that
+    // `account_by_name` does not retry the lookup with a larger heap buffer.
+    let account = Account::new(name, Uid(passwd.uid), Gid(passwd.gid))
+        .map_err(|_| Errno::ENAMETOOLONG)?;
     Ok(Some(account))
 }
 
@@ -805,8 +838,10 @@ fn resolve(name: &CStr, buf: &mut [u8]) -> Result<Option<Account>, Errno> {
 ///
 /// # Errors
 ///
-/// Errors if `getpwnam_r(3)` does, or if the name does not fit (see
-/// [`CStrHelper`]).
+/// Errors if `getpwnam_r(3)` does, if the name cannot be converted (see
+/// [`CStrHelper`]), or with [`Errno::ENAMETOOLONG`] if the database entry's
+/// login name exceeds [`LOGIN_NAME_MAX`]. A missing entry is `Ok(None)`, not an
+/// error.
 pub fn account_by_name<P: CStrHelper>(name: P) -> Result<Option<Account>, Errno> {
     name.convert_then_apply(|name| {
         let mut stack = [0_u8; 0x400];
@@ -835,7 +870,8 @@ pub fn account_by_name<P: CStrHelper>(name: P) -> Result<Option<Account>, Errno>
 ///
 /// # Errors
 ///
-/// Errors if the account cannot be resolved, is root, or if any step fails.
+/// Errors if the account cannot be resolved, has UID 0 or primary GID 0, or if
+/// any step fails.
 ///
 /// # Examples
 ///
@@ -854,7 +890,8 @@ pub fn drop_privileges<P: CStrHelper>(name: P) -> Result<(), PrivDropError> {
 ///
 /// # Errors
 ///
-/// Errors if the account cannot be resolved, is root, or if any step fails.
+/// Errors if the account cannot be resolved, has UID 0 or primary GID 0, or if
+/// any step fails.
 ///
 /// # Examples
 ///
@@ -870,10 +907,26 @@ pub fn drop_privileges_with<P: CStrHelper>(
     let account = account_by_name(name)
         .map_err(PrivDropError::Lookup)?
         .ok_or(PrivDropError::NoSuchAccount)?;
-    if account.is_root() {
-        return Err(PrivDropError::RootAccount);
-    }
+    ensure_unprivileged(&account)?;
     drop_privileges_to(policy, account)
+}
+
+/// Rejects an account that would retain root authority: UID 0 or primary GID 0.
+///
+/// This is the policy applied by [`drop_privileges`] and
+/// [`drop_privileges_with`]. [`drop_privileges_to`] deliberately remains a
+/// mechanism and does not call it.
+///
+/// # Errors
+///
+/// Returns [`PrivDropError::RootAccount`] when the account's UID or primary GID
+/// is root.
+pub(crate) const fn ensure_unprivileged(account: &Account) -> Result<(), PrivDropError> {
+    if account.is_root() || account.gid().is_root() {
+        Err(PrivDropError::RootAccount)
+    } else {
+        Ok(())
+    }
 }
 
 /// Drops privileges to an account that was resolved earlier.
@@ -895,15 +948,21 @@ pub fn drop_privileges_with<P: CStrHelper>(
 /// may already have reduced privileges and must not continue normal service
 /// execution.
 ///
-/// This function does not special-case root. If `account` is root, the
-/// sequence is effectively a no-op and verification succeeds, leaving the
-/// process privileged. Use [`drop_privileges`] or [`drop_privileges_with`] when
-/// the destination is resolved from a name; those refuse the root account.
+/// This function does not special-case the root account. If `account` has UID
+/// 0, the sequence still replaces the supplementary groups with `[0]` (for
+/// [`GroupPolicy::PrimaryGroupOnly`]), re-applies the all-zero IDs, and
+/// succeeds, leaving the process privileged. If the process lacks the
+/// privilege to perform those calls, it fails at the first step instead. Use
+/// [`drop_privileges`] or [`drop_privileges_with`] when the destination is
+/// resolved from a name; those refuse an account whose UID is root **or whose
+/// primary GID is root**.
 ///
 /// # Errors
 ///
-/// Every variant of [`PrivDropError`] identifies the failing step and preserves
-/// the underlying [`Errno`].
+/// Errors if the account cannot be resolved or any step fails. Each variant
+/// identifies the failing step and, where one exists, preserves the underlying
+/// [`Errno`]. The [`Verification`] variant carries the expected and observed
+/// credentials.
 ///
 /// # Examples
 ///
@@ -931,6 +990,14 @@ pub fn drop_privileges_to(policy: GroupPolicy, account: Account) -> Result<(), P
 }
 
 /// Verifies the credentials after a privilege drop.
+///
+/// For [`GroupPolicy::PrimaryGroupOnly`] the supplementary list must be exactly
+/// `[primary_gid]`. For [`GroupPolicy::Initgroups`] the observed list is
+/// compared with the membership reported by
+/// [`getgrouplist(3)`](https://man.openbsd.org/getgrouplist.3) for the account;
+/// order is ignored and both lists contain unique group IDs. The comparison
+/// therefore requires the group database to remain reachable at verification
+/// time, exactly as the `initgroups(3)` call itself does.
 fn verify(policy: GroupPolicy, account: &Account) -> Result<(), PrivDropError> {
     let uid = get_res_uid().map_err(PrivDropError::GetResUid)?;
     let gid = get_res_gid().map_err(PrivDropError::GetResGid)?;
@@ -939,7 +1006,10 @@ fn verify(policy: GroupPolicy, account: &Account) -> Result<(), PrivDropError> {
     let expected_gid = (account.gid(), account.gid(), account.gid());
     let groups_ok = match policy {
         GroupPolicy::PrimaryGroupOnly => groups.as_slice() == [account.gid()],
-        GroupPolicy::Initgroups => groups.contains(&account.gid()),
+        GroupPolicy::Initgroups => {
+            let expected = group_membership(account).map_err(PrivDropError::GetGroupList)?;
+            same_membership(&groups, &expected)
+        }
     };
     if uid == expected_uid && gid == expected_gid && groups_ok {
         Ok(())
@@ -952,5 +1022,97 @@ fn verify(policy: GroupPolicy, account: &Account) -> Result<(), PrivDropError> {
             policy,
             actual_groups: groups,
         }))
+    }
+}
+
+/// Returns the expected supplementary groups for `account`, as reported by
+/// [`getgrouplist(3)`](https://man.openbsd.org/getgrouplist.3).
+///
+/// A list that does not fit in [`NGROUPS_MAX`] entries is reported as
+/// `ERANGE`; `initgroups(3)` would silently truncate such a list, so treating it
+/// as a verification failure is the fail-closed behavior.
+///
+/// # Errors
+///
+/// Returns the `errno` reported by `getgrouplist(3)`, or `ERANGE` when the
+/// membership does not fit in [`NGROUPS_MAX`] entries.
+#[expect(unsafe_code, reason = "getgrouplist(3) writes through pointers")]
+fn group_membership(account: &Account) -> Result<Groups, Errno> {
+    let mut result = Groups {
+        gids: [Gid::ROOT; NGROUPS_MAX],
+        len: 0,
+    };
+    let mut count = c_int::try_from(NGROUPS_MAX).map_err(|_| Errno::ERANGE)?;
+    let capacity = count;
+    // SAFETY:
+    // `account.name()` is a valid NUL-terminated string borrowed for the call.
+    // `result.gids` is a live, aligned array of `NGROUPS_MAX` `Gid`s
+    // (`repr(transparent)` over `u32`), and `count` is exactly its length.
+    // `getgrouplist(3)` writes at most `count` entries and updates `count` with
+    // the number of groups.
+    let code = unsafe {
+        ffi::getgrouplist(
+            account.name().as_ptr(),
+            account.gid().0,
+            result.gids.as_mut_ptr().cast::<u32>(),
+            &raw mut count,
+        )
+    };
+    if code < 0 {
+        // `getgrouplist(3)` sets `count` to the required size when the buffer
+        // is too small. Prefer `ERANGE` over a stale `errno` in that case.
+        if !(0..=capacity).contains(&count) {
+            return Err(Errno::ERANGE);
+        }
+        let errno = Errno::last();
+        return Err(if errno == Errno::Other {
+            Errno::ERANGE
+        } else {
+            errno
+        });
+    }
+    result.len = u8::try_from(count).map_err(|_| Errno::ERANGE)?;
+    Ok(result)
+}
+
+/// Compares two group sets without relying on their order.
+///
+/// Both inputs are expected to contain unique group IDs, as returned by
+/// `getgroups(2)` and `getgrouplist(3)`.
+fn same_membership(left: &Groups, right: &Groups) -> bool {
+    left.len() == right.len() && left.iter().all(|gid| right.contains(gid))
+}
+
+#[cfg(test)]
+mod membership_tests {
+    use super::{Gid, Groups, NGROUPS_MAX, same_membership};
+
+    fn groups(ids: &[Gid]) -> Groups {
+        let mut groups = Groups {
+            gids: [Gid::ROOT; NGROUPS_MAX],
+            len: 0,
+        };
+        for (slot, gid) in groups.gids.iter_mut().zip(ids) {
+            *slot = *gid;
+        }
+        if let Ok(len) = u8::try_from(ids.len()) {
+            groups.len = len;
+        }
+        groups
+    }
+
+    #[test]
+    fn membership_comparison_ignores_order() {
+        let left = groups(&[Gid(1), Gid(2), Gid(3)]);
+        let right = groups(&[Gid(3), Gid(1), Gid(2)]);
+        assert!(same_membership(&left, &right));
+    }
+
+    #[test]
+    fn membership_comparison_rejects_missing_or_extra_entries() {
+        let left = groups(&[Gid(1), Gid(2)]);
+        assert!(!same_membership(&left, &groups(&[Gid(1)])));
+        assert!(!same_membership(&left, &groups(&[Gid(1), Gid(2), Gid(3)])));
+        assert!(!same_membership(&left, &groups(&[Gid(1), Gid(3)])));
     }
 }

@@ -35,13 +35,20 @@ use crate::error::Errno;
 ///
 /// The trait is the single entry point through which every OpenBSD interface in
 /// this crate accepts paths and names. It is implemented for [`CStr`],
-/// [`str`], `[u8]`, and, with the `std` feature, for [`OsStr`], [`OsString`],
-/// [`Path`], and [`PathBuf`], so that no interface forces callers to produce
-/// valid UTF-8.
+/// [`str`], `[u8]`, `&C`/`&mut C` where `C: CStrHelper`, and, with `alloc`, for
+/// `CString` and `String`; the `std` feature adds [`OsStr`], [`OsString`],
+/// `Cow<'_, OsStr>`, [`Path`], [`PathBuf`], `Component`, `Components`, and
+/// `std::path::Iter`. No interface forces callers to produce valid UTF-8.
 ///
 /// Implementors convert `self` to a [`CStr`] and then hand it to the provided
 /// closure. The closure is used (rather than returning a borrowed `CStr`)
 /// because some inputs need a temporary stack buffer for the terminating NUL.
+/// The reference is valid only for the duration of the closure; never store it
+/// or pass it to an API that retains the pointer.
+///
+/// The stack buffer is not zeroized. Callers that treat the input as secret
+/// should prefer the length-delimited APIs (such as `bcrypt_pbkdf`) or erase
+/// their own buffers with `explicit_bzero`.
 pub trait CStrHelper {
     /// Converts `self` into a [`CStr`] before passing it into `f`.
     ///

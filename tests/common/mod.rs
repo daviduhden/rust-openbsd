@@ -163,13 +163,15 @@ fn probe_paths(stem: &str) -> (std::path::PathBuf, std::path::PathBuf) {
 pub(crate) fn compile_exec_probe() -> Option<std::path::PathBuf> {
     let (source, binary) = probe_paths("rust-openbsd-exec-probe");
     std::fs::write(&source, EXEC_PROBE_SOURCE).expect("write probe source");
-    let status = Command::new("cc")
+    let Ok(status) = Command::new("cc")
         .args(["-std=c23", "-Wall", "-Wextra", "-Werror", "-static"])
         .arg("-o")
         .arg(&binary)
         .arg(&source)
         .status()
-        .expect("run cc");
+    else {
+        return None;
+    };
     if status.success() { Some(binary) } else { None }
 }
 
@@ -207,12 +209,14 @@ main(int argc, char **argv)
 pub(crate) fn compile_empty_pledge_probe() -> Option<std::path::PathBuf> {
     let (source, binary) = probe_paths("rust-openbsd-empty-pledge-probe");
     std::fs::write(&source, EMPTY_PLEDGE_PROBE_SOURCE).expect("write probe source");
-    let status = Command::new("cc")
+    let Ok(status) = Command::new("cc")
         .args(["-std=c23", "-Wall", "-Wextra", "-Werror"])
         .arg("-o")
         .arg(&binary)
         .arg(&source)
         .status()
-        .expect("run cc");
+    else {
+        return None;
+    };
     if status.success() { Some(binary) } else { None }
 }

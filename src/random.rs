@@ -74,7 +74,9 @@ pub fn arc4_random_buf(buf: &mut [u8]) {
 
 /// Fills a fresh [`Vec`] of `len` bytes with random bytes.
 ///
-/// See [`arc4_random_buf`].
+/// See [`arc4_random_buf`]. The buffer is allocated before it is filled, so an
+/// allocation failure aborts the process through the global allocator error
+/// handler; this infallible convenience cannot report it.
 #[cfg(feature = "alloc")]
 #[must_use]
 pub fn arc4_random_bytes(len: usize) -> Vec<u8> {
@@ -118,13 +120,19 @@ pub fn get_entropy(buf: &mut [u8]) -> Result<(), Errno> {
 
 /// Returns a fresh [`Vec`] of `len` bytes of kernel entropy.
 ///
-/// See [`get_entropy`].
+/// See [`get_entropy`]. The length is validated before the buffer is
+/// allocated, so an oversized request fails with [`Errno::EINVAL`] instead of
+/// attempting a huge allocation first.
 ///
 /// # Errors
 ///
-/// See [`get_entropy`].
+/// Returns [`Errno::EINVAL`] when `len` exceeds [`MAX_ENTROPY`]; other errors
+/// come from `get_entropy(2)`.
 #[cfg(feature = "alloc")]
 pub fn get_entropy_bytes(len: usize) -> Result<Vec<u8>, Errno> {
+    if len > MAX_ENTROPY {
+        return Err(Errno::EINVAL);
+    }
     let mut buf = vec![0_u8; len];
     get_entropy(&mut buf)?;
     Ok(buf)

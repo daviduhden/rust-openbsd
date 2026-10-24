@@ -91,8 +91,11 @@ execution is blocked with `EACCES`.
 | `promises` | `Some(&Promises::NONE)` | `""` — restrict to `_exit(2)` only |
 | `promises` | `Some(set)` | set this value to `set` |
 
-The same table applies to `execpromises`. `pledge`, `pledge_child`, and
-`pledge_both` are conveniences over `pledge_parts`; `pledge_raw` exposes the raw
+The same mapping applies to `execpromises`, with one important difference in
+wording: `Some(&Promises::NONE)` there means that *future executed programs*
+start with no promises (the `_exit(2)`-only state), not that the current process
+becomes `_exit`-only. `pledge`, `pledge_child`, and `pledge_both` are
+conveniences over `pledge_parts`; `pledge_raw` exposes the raw
 `Option<&CStr>` form.
 
 ### Forking and pledge
@@ -103,14 +106,15 @@ ceiling in the parent and then exec:
 ```text
 parent
     -> pledge_child(child_promises)     (exec ceiling, parent-side)
-    -> fork_dir + execve                (the child does nothing else)
+    -> fork(2) + execve                (the child does nothing else)
     -> the new image starts under child_promises
 ```
 
 OpenBSD copies the exec-promise state across `fork(2)` and applies it when a
 descendant executes a new image, so the child needs no pledge call of its own.
-`fork_exec` and `fork_exec_pledged` implement exactly this pattern, and
-`exec_pledged` replaces the current image under an exec ceiling.
+`fork_exec_pledged` implements exactly this pattern; `exec_pledged` replaces the
+current image under an exec ceiling. Plain `fork_exec` sets no policy of its
+own, and none of these helpers run crate code in the post-fork child.
 
 Do not apply major current-process pledge reductions in a live multithreaded
 child. Reducing the current promise set to an extreme restriction (in
@@ -141,10 +145,12 @@ With `openbsd-8-0` enabled, the typed pledge inventory excludes `exec` and
 `error`. Without that option, both legacy promises remain available. Raw
 pledge interfaces continue to pass strings to the kernel without filtering.
 
-Excluding these names from the typed API does not change kernel behavior.
-On kernels requiring `exec`, a process pledged without it cannot execute
-another program. The execution-promises examples require that kernel
-capability and are not a replacement for it.
+Excluding these names from the typed API is a crate-level decision; it does not
+establish that the target kernel rejects or accepts them. Verify the target
+kernel's promise table before relying on either behavior. On kernels that
+require `exec`, a process pledged without it cannot execute another program;
+use `pledge_raw` if the name must be passed through. The execution-promises
+examples require that kernel capability and are not a replacement for it.
 
 
 ## unveil
@@ -229,14 +235,23 @@ root's supplementary groups; this policy is [`GroupPolicy::PrimaryGroupOnly`].
 genuinely need the account's group memberships. [`account_by_name`] resolves a
 user to an [`Account`], and [`drop_privileges_to`] applies either policy to an
 account resolved earlier, which is useful when the account must be looked up
-before `chroot(2)` hides the password database.
+before `chroot(2)` hides the password database. [`drop_supplementary_groups`]
+is the explicit `setgroups(0, NULL)` helper.
 
 After the drop, the library verifies that the real, effective, and saved
-UIDs/GIDs and the supplementary groups are the expected values and returns a
-[`PrivDropError`] naming the failing step otherwise; each step's error preserves
-the underlying [`Errno`] (typically `EPERM` if the process is not root). After a
-partial failure the process may already have reduced privileges, so callers must
-treat any error as fatal for the current process.
+UIDs/GIDs are the expected values. For
+[`GroupPolicy::PrimaryGroupOnly`] it also verifies that the supplementary group
+list is exactly the primary GID; for [`GroupPolicy::Initgroups`] it compares the
+observed list with the membership reported by `getgrouplist(3)`, ignoring order.
+On failure the library returns a [`PrivDropError`] naming the failing step; each
+step's error preserves the underlying [`Errno`] where one exists (typically
+`EPERM` if the process is not root). After a partial failure the process may
+already have reduced privileges, so callers must treat any error as fatal for the
+current process.
+
+[`drop_privileges`] and [`drop_privileges_with`] refuse an account whose UID is
+root **or whose primary GID is root**. [`drop_privileges_to`] is the mechanism
+form and deliberately does not apply that policy.
 
 ### Why not `setusercontext(3)`?
 
@@ -260,16 +275,26 @@ for name resolution) until the drop is complete, then pledge again without them:
 ```text
 start privileged
     |
+    +-- resolve the destination account (account_by_name) while passwd(5) is reachable
+    |
     +-- perform privileged initialization
     |
-    +-- pledge including "id" if pledge is already enabled
+    +-- chroot / enter_chroot, if wanted (before pledge)
     |
-    +-- drop privileges
+    +-- pledge including "id" and "getpw" if pledge is already enabled
     |
-    +-- pledge again without "id"
+    +-- drop privileges (drop_privileges_to with the resolved account after chroot)
+    |
+    +-- pledge again without "id" and "getpw"
     |
     +-- continue as unprivileged process
 ```
+
+Resolve the account before the chroot: `drop_privileges` and
+`account_by_name` read the password database, which the new root may not contain.
+`GroupPolicy::Initgroups` also reads the group database at drop time; after a
+chroot that does not provide it, use `GroupPolicy::PrimaryGroupOnly` or drop
+before entering the new root.
 
 ```rust
 use rust_openbsd::{drop_privileges, pledge, Promise, Promises};
@@ -351,10 +376,13 @@ fn serve() {}
   with an uncatchable `SIGABRT` unless the `error` promise is active.
 * `unveil(2)` denials surface later as `EACCES`/`ENOENT` errors at the filesystem
   call site.
-* Strings and byte strings that cross the FFI boundary must not contain embedded
+* Strings and paths converted through [`CStrHelper`] must not contain embedded
   `NUL` bytes; the library rejects them explicitly instead of letting C string
-  conversion truncate them.
-* With the `std` feature, [`Errno`] converts to and from [`std::io::Error`].
+  conversion truncate them. `bcrypt_pbkdf` and `bcrypt_pbkdf_into` are
+  length-delimited byte-string APIs and accept `NUL` bytes by design.
+* With the `std` feature, [`Errno`] converts to [`std::io::Error`] infallibly;
+  the reverse conversion is a lossy `TryFrom` that rejects errors without a raw
+  OS code and maps unknown codes to `Errno::Other`.
 
 ## chroot
 
@@ -378,7 +406,10 @@ fn main() -> Result<(), rust_openbsd::Errno> {
 pledge/unveil/privilege dropping, cannot confine an already-root process
 reliably, and open descriptors keep access to resources outside the new root. It
 is not permitted at all once the process has called `pledge(2)`, so chroot
-before pledging.
+before pledging. Resolve the account to which privileges will later be dropped
+*before* entering the new root, because the password database may no longer be
+reachable; `Account` is inline and `Copy`, so it can be passed to
+`drop_privileges_to` afterward.
 
 ## Credentials
 
@@ -405,12 +436,15 @@ comparison and is not affected by later ID changes.
 
 `get_peer_credentials` returns the effective UID and GID of the peer of a
 connected Unix-domain `SOCK_STREAM`/`SOCK_SEQPACKET` socket. It supplies facts
-for an authorization decision; it is not authentication by itself. Like `chroot`,
-it is not covered by any pledge promise and must be used before pledging.
+for an authorization decision; it is not authentication by itself.
+`getpeereid(3)` is implemented with `getsockopt(2)` (`SO_PEERCRED`), so on
+current OpenBSD it needs the `stdio` promise plus one of `unix`, `inet`, or
+`dns`; with only `stdio` it takes the pledge-violation path. Calling it before
+pledging is the conservative, version-independent choice.
 
 ## Process titles and daemonization
 
-[`process`]:
+The [`process`] module:
 
 ```rust
 use rust_openbsd::{close_from, dtable_count, reset_proctitle, set_proctitle};
@@ -419,7 +453,7 @@ fn main() -> Result<(), rust_openbsd::Errno> {
     set_proctitle("mydaemon: serving")?; // setproctitle("%s", title)
     reset_proctitle(); // setproctitle(NULL)
     let open_descriptors = dtable_count(); // getdtablecount(2)
-    close_from(3); // closefrom(2)
+    close_from(3)?; // closefrom(2)
     let _ = open_descriptors;
     Ok(())
 }
@@ -428,6 +462,9 @@ fn main() -> Result<(), rust_openbsd::Errno> {
 Titles are passed to `setproctitle(3)` only as data through a fixed `"%s"`
 format literal, so user-controlled strings can never become format strings.
 Titles are limited to [`PROCTITLE_MAX`] bytes and work under the `stdio` promise.
+The native implementation performs the truncation; without the `alloc` feature,
+`CStrHelper` rejects a title of 1024 bytes or more with `ERANGE` before the
+native call instead of truncating it.
 
 `set_progname` and `progname` expose `setprogname(3)`/`getprogname(3)`; the name
 is stored by pointer by the native implementation, so `set_progname` requires a
@@ -436,7 +473,10 @@ is stored by pointer by the native implementation, so `set_progname` requires a
 `exec_pledged` sets the execution promises and then replaces the current image;
 `fork_exec` and `fork_exec_pledged` spawn a child, the latter after setting the
 promise ceiling in the parent. These build on [`std::process::Command`] and never
-run caller code in the post-fork child.
+run crate code in the post-fork child. A `pre_exec` closure installed by the
+caller is caller code and does run there, so it must also obey the post-fork
+rules. If an exec helper fails after `pledge_child` succeeded, the execution
+ceiling is not rolled back.
 
 `daemonize` and `daemonize_with` detach from the controlling terminal, taking
 [`DaemonOptions`] with positively named fields
@@ -515,11 +555,15 @@ fn main() {
 [`mimmutable`] permanently forbids future changes to the protection or mapping
 of a memory region. It is `unsafe`: the kernel rounds the range outward to whole
 pages, so the caller must guarantee that every affected page belongs to a
-dedicated mapping rather than an ordinary Rust allocation. [`freezero`] zeroes
-and releases a `malloc(3)` allocation and is `unsafe` because ownership
-transfers to it. The constant-time comparisons are the recommended interfaces
-for comparing secrets such as hashes and MACs; do not reimplement them with an
-early-exiting comparison.
+dedicated mapping rather than an ordinary Rust allocation. Pages that are
+unmapped at the time of the call are skipped and do not become immutable if they
+are mapped later, and an empty slice is a no-op. Because the wrapper takes a
+slice, a range containing an unmapped hole can only be exercised with the raw
+syscall, not by constructing an invalid slice. [`freezero`] zeroes and releases
+a `malloc(3)` allocation and is `unsafe` because ownership transfers to it; `len`
+must not exceed the allocation size. The constant-time comparisons are the
+recommended interfaces for comparing secrets such as hashes and MACs; do not
+reimplement them with an early-exiting comparison.
 
 ## Authentication
 
@@ -539,12 +583,15 @@ fn main() -> Result<(), rust_openbsd::Errno> {
 ```
 
 These call OpenBSD's implementations directly; no cryptographic code lives in
-this crate. Passwords and hashes are passed as byte slices and are never logged
-or embedded in error values; embedded `NUL` bytes are rejected rather than
-silently truncated. Two unavoidable limitations of a managed runtime apply:
-password buffers cannot be guaranteed to be erased in place (use
-[`explicit_bzero`] on explicit native buffers if that matters), and the
-comparison itself is performed by the native constant-time implementation.
+this crate. `crypt_checkpass` and `crypt_newhash` pass their arguments through
+`CStrHelper` and reject embedded `NUL` bytes rather than silently truncating
+them; `bcrypt_pbkdf` and `bcrypt_pbkdf_into` are length-delimited and accept
+`NUL` bytes. Passwords and hashes are never logged or embedded in error values.
+Two unavoidable limitations of a managed runtime apply: the crate's own
+`CStrHelper` conversion may leave a transient copy in a stack buffer or heap
+`CString`, and password buffers cannot be guaranteed to be erased in place (use
+[`explicit_bzero`] on explicit native buffers if that matters). The comparison
+itself is performed by the native constant-time implementation.
 
 ## Scope
 
@@ -593,26 +640,30 @@ command-line interface, and no unrelated functionality.
 | `pinsyscalls(2)`, `kbind(2)`, `__tfork(2)`, `__thrsleep(2)`, `futex(2)`, `__get_tcb(2)`, `__pledge_open(2)`, `utrace(2)`, `syscall(2)` | — | internal kernel/libc interfaces, not application APIs |
 | `skey(3)` | — | obsolete |
 
-Facilities above are audited against OpenBSD 7.9 (stable target) and
-OpenBSD-current.
+Facilities above are audited against OpenBSD 7.9, OpenBSD 8.0, and
+OpenBSD-current; the CI matrix currently executes only on OpenBSD 8.0.
 
 ## Supported OpenBSD versions
 
 * Targets **OpenBSD 7.9**, **OpenBSD 8.0**, and **OpenBSD-current**.
 * Interfaces that first appeared in OpenBSD 8.0 are gated behind the
   `openbsd-8-0` Cargo feature, so the default build keeps working on 7.9.
-* The [`Promise`] list was verified against the kernel's `pledgereq` table in
-  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c)
-  (rev 1.369 on OpenBSD-current): 35 promises, `tmppath` removed and documented
-  as "no longer available", `disklabel`, `drm`, and `vmm` included; the list is
-  unchanged in 8.0.
-* Unveil permissions were verified against `sys/kern/kern_unveil.c` (rev 1.57):
+* The typed pledge inventory has 35 promises by default and 33 with
+  `openbsd-8-0`, which excludes the legacy `exec` and `error` names. The
+  kernel's own `pledgereq` table is version-dependent: verify it for the target
+  kernel (see
+  [`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c))
+  instead of assuming that a name is accepted or rejected. `tmppath` is removed
+  from current kernels and is deliberately not exposed; `disklabel`, `drm`, and
+  `vmm` are included.
+* Unveil permissions were verified against `sys/kern/kern_unveil.c`:
   `r`, `w`, `x`, `c`, with the empty permission set valid.
-* The [`Errno`] values were verified against `sys/sys/errno.h` (rev 1.25),
-  which is unchanged in 8.0: valid codes are `1..=95` (`EPROTO` is `ELAST`).
+* The [`Errno`] values were verified against `sys/sys/errno.h`: valid codes are
+  `1..=95` (`EPROTO` is `ELAST`).
 * Login-name and group limits are taken from OpenBSD's `LOGIN_NAME_MAX` (32) and
-  `NGROUPS_MAX` (16); the password buffer size is `_PASSWORD_LEN` (128), the
-  process-title limit is `MAX_PROCTITLE` (2048), and `PATH_MAX` is 1024.
+  `NGROUPS_MAX` (16). The Rust constants are `LOGIN_NAME_MAX`, `NGROUPS_MAX`,
+  `PASSWORD_LEN` (128, the native `_PASSWORD_LEN`), `PROCTITLE_MAX` (2048, the
+  native `MAX_PROCTITLE`), `PATH_MAX` (1024), and `MAX_ENTROPY` (256).
 
 ### Language standards
 
@@ -624,35 +675,55 @@ not depend on the compiler default:
   exist on OpenBSD 7.9, which ships Rust 1.94.1.
 * No C shim is used. The only variadic native interfaces,
   `setproctitle(3)` and `open(2)`, are called through Rust's variadic FFI with
-  fixed literals, so the crate is pure Rust and needs no C compiler.
+  fixed literals, so building the crate is pure Rust and needs no C compiler.
+  The test suite optionally compiles small C probes at test time (see
+  [Testing](#testing)); a missing `cc` makes those tests skip, it does not
+  affect the library build.
 
 ### Cargo features
 
 The crate is `no_std` and has no dependencies. `alloc` adds the functions that
-return owned buffers; `std` (the default, and implying `alloc`) adds the exec
+return owned buffers and lets `CStrHelper` convert inputs of 1024 bytes or more
+through a heap `CString`; `std` (the default, and implying `alloc`) adds the exec
 helpers built on [`std::process::Command`] and the [`Errno`]/[`std::io::Error`]
 conversions. Everything else, including pledge, unveil, and privilege dropping,
-works without either.
+works without either, subject to the 1023-byte `CStrHelper` input limit when
+`alloc` is disabled.
 
 `openbsd-8-0` (off by default) adds the interfaces that first appeared in
 OpenBSD 8.0 — currently `getexecpath(3)` via [`get_execpath`] — whose symbols do
 not exist in 7.9's libc. Enabling it makes the crate require OpenBSD 8.0 or
-later.
+later, and removes the legacy `Promise::Exec` and `Promise::Error` variants from
+the typed inventory.
 
 ## Testing
 
 ```console
-cargo test
+cargo test --all-features   # on OpenBSD 8.0
+cargo test                  # on OpenBSD 7.9, or when omitting the 8.0 API
 ```
 
-Runtime tests exercise the real kernel interfaces in forked child processes.
-Tests that require root (privilege dropping, the `id`-promise lifecycle, the
-`rtable` domain change) are skipped cleanly when the test runner is not root.
-Some pledge tests expect the child process to die with `SIGABRT`, which is
-normal and part of the test; they inspect the child's termination status instead
-of letting the suite crash. The `_exit`-only (empty promise set) state and the
-exec-promise probes are verified by small single-threaded C programs compiled at
-test time, skipped when `cc` is unavailable.
+Runtime tests exercise the real kernel interfaces in process-isolated child
+programs (the test binary is re-executed with `--exact --ignored`). Tests that
+require root (privilege dropping, the `id`-promise lifecycle, and the
+`enter_chroot` confinement test) are skipped cleanly when the test runner is not
+root; tests that must not run as root (the unprivileged `chroot`, unprivileged
+drop, and `rtable` cases) skip with a different message when it is. Some pledge
+tests expect the child process to die with `SIGABRT`, which is normal and part of
+the test; they inspect the child's termination status instead of letting the
+suite crash. The `_exit`-only (empty promise set) state and the exec-promise
+probes are verified by small single-threaded C programs compiled at test time,
+skipped when `cc` cannot be started or fails to compile/link.
+
+The integration tests compile Rust code that uses the default feature set, so
+`cargo test --no-default-features` is not a supported test configuration; the
+feature combinations without `std`/`alloc` are build-checked instead.
+
+The descriptor and credential contracts (`closefrom(2)` error behavior and
+`getpeereid(3)` under different promise sets), the `mimmutable(2)` hole
+behavior, and the `Initgroups` membership comparison are covered by isolated
+kernel tests. CI executes them on OpenBSD 8.0 for amd64 and arm64; OpenBSD 7.9 is
+not in the matrix and must be checked manually on that release.
 
 ## Continuous integration
 
@@ -661,17 +732,22 @@ GitHub Actions boots a real OpenBSD 8.0 virtual machine
 every pull request, and runs the full validation inside it:
 
 * installs the native OpenBSD Rust toolchain with `pkg_add`;
-* `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+* `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
   and `cargo test --all-features`, executed as an unprivileged `builder` user;
-* the default, `no_std` and `alloc` feature combinations;
-* `cargo doc` and `cargo package`;
-* runs the test suite again as `root`, and fails if the privilege-dropping tests
-  are skipped or do not pass, so the real, effective and saved UID/GID drops and
-  the inability to regain root are exercised against the actual kernel.
+* `cargo check --all-targets` for the default (7.9-compatible) surface, and
+  `cargo build` for `--no-default-features`, `--no-default-features --features alloc`,
+  and `--features openbsd-8-0`;
+* `cargo check --all-features`, `cargo doc --no-deps --all-features`, and
+  `cargo package --allow-dirty`;
+* runs the test suite again as `root`, and fails if tests report
+  `requires root privileges` or do not pass, so the real, effective and saved
+  UID/GID drops and the inability to regain root are exercised against the actual
+  kernel.
 
-The test binaries enable `openbsd-8-0`, because OpenBSD 8.0 removed the `exec`
-and `error` promises; this also runs the `getexecpath(3)` tests against the real
-kernel.
+The test suite is run with `--all-features`, which enables `openbsd-8-0` and
+therefore exercises the 33-promise typed inventory and the `getexecpath(3)`
+tests against the real kernel. OpenBSD 7.9 and the declared MSRV are not part of
+the CI matrix; verify them explicitly when changing version-sensitive code.
 
 Every third-party action is pinned to a full commit hash and GitHub token
 permissions are minimal.
@@ -703,6 +779,13 @@ represent the original upstream work as new.
 [`pledge_child`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_child.html
 [`pledge_parts`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_parts.html
 [`pledge_raw`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_raw.html
+[`privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html
+[`credentials`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html
+[`process`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html
+[`random`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html
+[`rtable`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html
+[`memory`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html
+[`authentication`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html
 [`unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil.html
 [`unveil_paths`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_paths.html
 [`lock_unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.lock_unveil.html
@@ -717,6 +800,7 @@ represent the original upstream work as new.
 [`drop_privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges.html
 [`drop_privileges_with`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_with.html
 [`drop_privileges_to`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_to.html
+[`drop_supplementary_groups`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_supplementary_groups.html
 [`GroupPolicy`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
 [`GroupPolicy::PrimaryGroupOnly`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
 [`GroupPolicy::Initgroups`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html

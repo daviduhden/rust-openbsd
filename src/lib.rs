@@ -34,7 +34,8 @@
 //!   [`closefrom(2)`](https://man.openbsd.org/closefrom.2), and
 //!   [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), plus exec
 //!   under a pledge ceiling and daemonization ([`set_proctitle`], [`progname`],
-//!   [`close_from`], [`dtable_count`], [`exec_pledged`], [`daemonize`]).
+//!   [`close_from`], [`dtable_count`], [`fork_exec`], [`fork_exec_pledged`],
+//!   [`exec_pledged`], [`daemonize`]).
 //! * [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3), the canonical
 //!   pathname of the running executable, via `get_execpath` (gated behind the
 //!   `openbsd-8-0` feature).
@@ -48,7 +49,8 @@
 //!   [`freezero(3)`](https://man.openbsd.org/freezero.3),
 //!   [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), and
 //!   [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3)
-//!   ([`mimmutable`], [`explicit_bzero`], [`freezero`], [`timingsafe_bcmp`]).
+//!   ([`mimmutable`], [`explicit_bzero`], [`freezero`], [`timingsafe_bcmp`],
+//!   [`timingsafe_memcmp`]).
 //! * [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3),
 //!   [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), and
 //!   [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3)
@@ -177,15 +179,28 @@
 //! initialization first and then transition, in this order:
 //!
 //! 1. privileged initialization (sockets, log files, configuration);
-//! 2. [`chroot()`](crate::chroot()) / [`enter_chroot`] if a filesystem root is wanted;
-//! 3. [`unveil()`] rules and [`lock_unveil`];
-//! 4. an initial [`pledge()`] that still includes the promises the transition
-//!    needs (`id`, and `getpw` for account resolution);
-//! 5. [`drop_privileges`];
-//! 6. a final [`pledge()`] without the identity-changing promises;
-//! 7. optional [`pledge_child`] to restrict future
+//! 2. resolve the destination account with [`account_by_name`] while the
+//!    password database is still reachable, and keep the inline [`Account`];
+//! 3. [`chroot()`](crate::chroot()) / [`enter_chroot`] if a filesystem root is
+//!    wanted;
+//! 4. [`unveil()`] rules and [`lock_unveil`];
+//! 5. an initial [`pledge()`] that still includes the promises the transition
+//!    needs (`id`, and `getpw` for any remaining account resolution);
+//! 6. [`drop_privileges_to`] with the account resolved in step 2;
+//! 7. a final [`pledge()`] without the identity-changing promises;
+//! 8. optional [`pledge_child`] to restrict future
 //!    [`execve(2)`](https://man.openbsd.org/execve.2) children;
-//! 8. the unprivileged service loop.
+//! 9. the unprivileged service loop.
+//!
+//! Resolve the account *before* the chroot: [`drop_privileges`] and
+//! [`account_by_name`] read the password database, which the new root may not
+//! contain. [`GroupPolicy::Initgroups`] also reads the group database at drop
+//! time; after a chroot, use [`GroupPolicy::PrimaryGroupOnly`] or drop
+//! privileges before entering the new root.
+//!
+//! Daemonize before pledging, because `fork(2)`, `setsid(2)`, `chdir(2)`, and
+//! the `/dev/null` redirection need promises that the final service loop
+//! should not retain.
 //!
 //! # Warning: process-wide state
 //!
@@ -203,7 +218,8 @@
 //!
 //! Enables [`alloc`](https://doc.rust-lang.org/stable/alloc/) support. Without
 //! it, the account database lookup uses a fixed-size stack buffer and reports
-//! `ERANGE` for entries that do not fit.
+//! `ERANGE` for entries that do not fit, and [`CStrHelper`] rejects inputs
+//! longer than 1023 bytes with `ERANGE` instead of allocating a `CString`.
 //!
 //! ### `std`
 //!
@@ -218,8 +234,11 @@
 //! Binds interfaces that first appeared in OpenBSD 8.0 (currently
 //! [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3), via
 //! `get_execpath`). Those symbols do not exist in OpenBSD 7.9's libc, so
-//! enabling this feature makes the crate require OpenBSD 8.0 or later. It is
-//! off by default; the 7.9-compatible surface is always available.
+//! enabling this feature makes the crate require OpenBSD 8.0 or later. It also
+//! removes the legacy `Promise::Exec` and `Promise::Error` variants from
+//! the typed pledge inventory (33 promises instead of 35); raw pledge
+//! interfaces continue to pass names through unfiltered. The feature is off by
+//! default; the 7.9-compatible surface is always available.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg = false))]
 #![no_std]
@@ -267,8 +286,8 @@ pub use crate::{
     privileges::{
         Account, Gid, GroupPolicy, Groups, LOGIN_NAME_MAX, NGROUPS_MAX, PrivDropError,
         PrivDropStep, Uid, Verification, account_by_name, drop_privileges, drop_privileges_to,
-        drop_privileges_with, get_res_gid, get_res_uid, groups, init_groups, set_groups,
-        set_res_gid, set_res_uid,
+        drop_privileges_with, drop_supplementary_groups, get_res_gid, get_res_uid, groups,
+        init_groups, set_groups, set_res_gid, set_res_uid,
     },
     process::{
         DaemonOptions, PATH_MAX, PROCTITLE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,

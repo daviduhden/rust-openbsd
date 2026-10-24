@@ -37,6 +37,8 @@ const PROT_READ_WRITE: i32 = 0x1 | 0x2;
 const MAP_ANON: i32 = 0x1000;
 /// `MAP_PRIVATE` from OpenBSD's `<sys/mman.h>`.
 const MAP_PRIVATE: i32 = 0x0002;
+/// `MAP_FIXED` from OpenBSD's `<sys/mman.h>`.
+const MAP_FIXED: i32 = 0x0010;
 
 unsafe extern "C" {
     /// `malloc(3)`, only so `freezero(3)` can be exercised on real native memory.
@@ -52,6 +54,13 @@ unsafe extern "C" {
     ) -> *mut c_void;
     /// `mprotect(2)`.
     fn mprotect(addr: *mut c_void, len: usize, prot: i32) -> i32;
+    /// `munmap(2)`.
+    fn munmap(addr: *mut c_void, len: usize) -> i32;
+    /// The raw `mimmutable(2)` call, used to describe a range that contains an
+    /// unmapped hole. The safe wrapper takes `&[u8]`, which cannot represent a
+    /// hole without creating a slice over invalid memory.
+    #[link_name = "mimmutable"]
+    fn mimmutable_raw(addr: *mut c_void, len: usize) -> i32;
 }
 
 #[test]
@@ -92,6 +101,14 @@ fn freezero_releases_native_memory() {
 }
 
 #[test]
+fn mimmutable_empty_slice_is_a_noop() {
+    let empty: [u8; 0] = [];
+    // SAFETY: the wrapper returns before entering the kernel for an empty
+    // slice, so no mapping is frozen.
+    assert_eq!(unsafe { mimmutable(&empty) }, Ok(()));
+}
+
+#[test]
 fn mimmutable_freezes_a_mapping() {
     // A page-aligned anonymous mapping, as `mimmutable(2)` requires a valid
     // mapped range rather than a slice of the allocator's heap.
@@ -117,6 +134,65 @@ fn mimmutable_freezes_a_mapping() {
     // so rounding the range outward to page boundaries only touches this
     // mapping.
     assert_eq!(unsafe { mimmutable(region) }, Ok(()));
+}
+
+#[test]
+fn mimmutable_skips_unmapped_holes() {
+    let page_size = 4096_usize;
+    let length = 3 * page_size;
+    // SAFETY: `mmap(2)` with these arguments is always safe to call; the result
+    // is checked for `MAP_FAILED` before use.
+    let base = unsafe {
+        mmap(
+            ptr::null_mut(),
+            length,
+            PROT_READ_WRITE,
+            MAP_ANON | MAP_PRIVATE,
+            -1,
+            0,
+        )
+    };
+    assert_ne!(base as isize, -1, "mmap(2) failed");
+
+    // Punch a one-page hole in the middle of the mapping.
+    // SAFETY: `base + page_size` is the second page of the live mapping.
+    let middle = unsafe { base.cast::<u8>().add(page_size) };
+    // SAFETY: `middle` is the second page of the three-page live mapping.
+    assert_eq!(unsafe { munmap(middle.cast(), page_size) }, 0, "munmap(2)");
+
+    // Freeze the range covering both remaining pages and the hole. This uses
+    // the raw syscall because the safe wrapper takes `&[u8]`, and a slice
+    // cannot span an unmapped hole without being invalid.
+    // SAFETY: the range starts at a dedicated anonymous mapping; the middle
+    // page is unmapped, so freezing the outer pages does not affect allocator
+    // metadata.
+    assert_eq!(
+        unsafe { mimmutable_raw(base, length) },
+        0,
+        "mimmutable(2) with a hole"
+    );
+
+    // Map a fresh page into the hole. The kernel did not mark unmapped pages
+    // immutable, so this mapping must remain mutable.
+    // SAFETY: `MAP_FIXED` at the address of the hole is valid; the result is
+    // checked for `MAP_FAILED`.
+    let replacement = unsafe {
+        mmap(
+            middle.cast(),
+            page_size,
+            PROT_READ_WRITE,
+            MAP_ANON | MAP_PRIVATE | MAP_FIXED,
+            -1,
+            0,
+        )
+    };
+    assert_ne!(replacement as isize, -1, "mmap(2) into the hole failed");
+    // SAFETY: `replacement` is a live page mapped into the former hole.
+    assert_eq!(
+        unsafe { mprotect(replacement, page_size, PROT_READ) },
+        0,
+        "a page mapped into an unmapped hole must not be immutable"
+    );
 }
 
 #[test]

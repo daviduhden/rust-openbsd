@@ -47,12 +47,16 @@ use crate::{
 
 /// A `pledge(2)` promise: a subsystem of system operations.
 ///
-/// The enumeration matches the `pledgereq` table accepted by the kernel on
-/// OpenBSD 7.9 and OpenBSD-current
-/// ([`sys/kern/kern_pledge.c`](https://github.com/openbsd/src/blob/master/sys/kern/kern_pledge.c)).
+/// The enumeration matches the `pledgereq` table accepted by the kernel for the
+/// selected API surface. With the `openbsd-8-0` feature, the legacy `exec` and
+/// `error` variants are excluded from the typed API; without it they are
+/// available, matching the OpenBSD 7.9 surface. This is a crate API policy:
+/// verify the promise table of the target kernel before assuming that a name is
+/// accepted or rejected (see the `rust-openbsd-platform` skill).
+///
 /// The removed `tmppath` promise is deliberately not represented: `pledge(2)`
-/// rejects it with `EINVAL`. Use `rpath`, `wpath`, and `cpath` together with an
-/// `unveil` rule for temporary files instead.
+/// rejects it with `EINVAL` on current kernels. Use `rpath`, `wpath`, and
+/// `cpath` together with an `unveil` rule for temporary files instead.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Promise {
     /// `audio`: `audio(4)` device `ioctl` operations.
@@ -132,6 +136,11 @@ pub enum Promise {
 impl Promise {
     /// Every promise exposed for the selected API version, in the order used by
     /// `kern_pledge.c`.
+    ///
+    /// The array has 33 entries with `openbsd-8-0` and 35 without it. The
+    /// kernel's own table is version-dependent and may still recognize a name
+    /// that the typed API excludes; use [`pledge_raw`] when a name must be
+    /// passed through unfiltered.
     pub const ALL: [Self; if cfg!(feature = "openbsd-8-0") {
         33
     } else {
@@ -779,13 +788,17 @@ pub fn pledge_raw(promises: Option<&CStr>, execpromises: Option<&CStr>) -> Resul
 /// Converts a raw byte string into a promise set through [`CStrHelper`].
 ///
 /// This is a convenience for callers that hold a native promise list (for
-/// example from a configuration file). Unknown names yield [`Errno::EINVAL`],
+/// example from a configuration file). Names are separated by any Unicode
+/// whitespace and are matched exactly (case-sensitively); the result is
+/// re-encoded with single spaces, so the parser is more permissive than the
+/// kernel's space-only separator. Unknown names yield [`Errno::EINVAL`],
 /// matching `pledge(2)`.
 ///
 /// # Errors
 ///
-/// Returns [`Errno::EINVAL`] for a NUL byte or an unknown promise name, and
-/// [`Errno::ERANGE`] if the input cannot be converted (see [`CStrHelper`]).
+/// Returns [`Errno::EINVAL`] for a NUL byte, invalid UTF-8, or an unknown
+/// promise name, and [`Errno::ERANGE`] if the input cannot be converted (see
+/// [`CStrHelper`]).
 pub fn promises_from_str<C: CStrHelper>(promises: C) -> Result<Promises, Errno> {
     promises.convert_then_apply(|cstr| {
         cstr.to_str()
