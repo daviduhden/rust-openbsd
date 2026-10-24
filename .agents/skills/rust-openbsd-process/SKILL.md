@@ -55,9 +55,9 @@ unless the existing `std::process::Command` model cannot express the requirement
    and preferred under modern service supervision.
 7. `close_from` closes every descriptor `>= lowfd`, including the argument and
    runtime-managed descriptors; it now returns `Result<(), Errno>` so failures
-   are observable. A negative `lowfd` is `EINVAL`; a threshold above every open
-   descriptor is accepted. Do not assume descriptors are contiguous, and do not
-   confuse `dtable_count` with the highest descriptor.
+   are observable. A negative `lowfd`, or one greater than every open
+   descriptor, is `EBADF` and closes nothing. Do not assume descriptors are
+   contiguous, and do not confuse `dtable_count` with the highest descriptor.
 8. `dtable_count` cannot fail, is a snapshot, and counts 0/1/2 if open. It is not
    a bound for iteration.
 9. `set_proctitle` always passes a fixed `"%s"` format and the title as data.
@@ -114,7 +114,7 @@ safety invariant that keeps libc's stored pointer valid. `exec_pledged` returns
 ## Testing and acceptance
 
 - Isolated child: titles, program name, `close_from` error contract (negative
-  `lowfd` is `EINVAL`, a high threshold succeeds), daemonize never returning,
+  `lowfd` and a high threshold both return `EBADF`), daemonize never returning,
   the `child_transition_permitted` fail-closed decision table, `fork_exec_pledged`,
   `exec_pledged`, and the exec-ceiling violation (`SIGABRT`).
 - The syscall-level failure of `chdir("/")` or the `/dev/null` redirection is

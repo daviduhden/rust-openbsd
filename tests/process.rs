@@ -53,21 +53,23 @@ fn child_process_state() {
     set_progname(c"rust-openbsd-progname");
     assert_eq!(progname(), c"rust-openbsd-progname");
 
-    // A high threshold closes nothing that the test harness uses.
-    assert!(close_from(10_000).is_ok());
+    // A threshold above every open descriptor is reported as `EBADF` and
+    // closes nothing, so the standard descriptors must survive.
+    assert_eq!(close_from(10_000), Err(rust_openbsd::Errno::EBADF));
     assert!(dtable_count() > 0, "the standard descriptors were closed");
 
     exit_now(0);
 }
 
-/// `closefrom(2)` reports `EINVAL` for a negative threshold and accepts a
-/// threshold above every open descriptor. CI runs this on OpenBSD 8.0 for amd64
-/// and arm64; OpenBSD 7.9 is not in the CI matrix and must be checked manually.
+/// `closefrom(2)` reports `EBADF` for a negative threshold and for a threshold
+/// above every open descriptor; both close nothing. CI runs this on OpenBSD 8.0
+/// for amd64 and arm64; OpenBSD 7.9 is not in the CI matrix and must be checked
+/// manually.
 #[test]
 #[ignore = "isolated child process"]
 fn child_close_from_error_contract() {
-    assert_eq!(close_from(-1), Err(rust_openbsd::Errno::EINVAL));
-    assert!(close_from(10_000).is_ok());
+    assert_eq!(close_from(-1), Err(rust_openbsd::Errno::EBADF));
+    assert_eq!(close_from(10_000), Err(rust_openbsd::Errno::EBADF));
     exit_now(0);
 }
 

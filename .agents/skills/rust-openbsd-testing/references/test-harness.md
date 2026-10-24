@@ -82,7 +82,7 @@ is not run on OpenBSD 8.0; it is only compiled with `cargo check --all-targets`.
 
 | Behavior | Test | Notes |
 | --- | --- | --- |
-| `closefrom(-1)` is `EINVAL` | `child_close_from_error_contract` | High threshold must be `Ok(())`; 8.0 amd64/arm64 CI, 7.9 manual |
+| `closefrom(-1)` is `EBADF` | `child_close_from_error_contract` | A high threshold is also `EBADF`; 8.0 amd64/arm64 CI, 7.9 manual |
 | `getpeereid` under `stdio + unix` | `child_peer_credentials_with_unix_promise` | Isolated child |
 | `getpeereid` under `stdio` only aborts | `child_peer_credentials_without_socket_promise_aborts` | Expects `SIGABRT` |
 | `mimmutable` empty slice is a no-op | `mimmutable_empty_slice_is_a_noop` | Unit-level, safe wrapper |

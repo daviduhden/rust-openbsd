@@ -193,16 +193,17 @@ pub fn set_progname(name: &'static CStr) {
 /// descriptors to keep reserved at the low numbers. The argument itself is
 /// closed too, as are any runtime-managed descriptors above it.
 ///
-/// The result is propagated instead of being discarded, so a caller that
-/// depends on descriptor hygiene can observe a failure. OpenBSD reports
-/// [`Errno::EINVAL`] for a negative `lowfd`; other failures are kernel-specific.
-/// Closing descriptors that another thread is using remains the caller's
-/// responsibility.
+/// The native call reports [`Errno::EBADF`] when `lowfd` is negative or greater
+/// than every open descriptor; in that case it closes nothing. The result is
+/// propagated instead of being discarded, so a caller that depends on
+/// descriptor hygiene can observe the failure. Closing descriptors that another
+/// thread is using remains the caller's responsibility.
 ///
 /// # Errors
 ///
-/// Returns [`Errno::EINVAL`] for a negative `lowfd`; other failures reported by
-/// the native call are propagated.
+/// Returns [`Errno::EBADF`] for a negative `lowfd` or when `lowfd` is greater
+/// than every open descriptor; other failures reported by the native call are
+/// propagated.
 ///
 /// # Pledge
 ///

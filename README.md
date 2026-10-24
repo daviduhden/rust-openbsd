@@ -453,7 +453,7 @@ fn main() -> Result<(), rust_openbsd::Errno> {
     set_proctitle("mydaemon: serving")?; // setproctitle("%s", title)
     reset_proctitle(); // setproctitle(NULL)
     let open_descriptors = dtable_count(); // getdtablecount(2)
-    close_from(3)?; // closefrom(2)
+    let _ = close_from(3); // EBADF if no descriptor is open at or above 3
     let _ = open_descriptors;
     Ok(())
 }
@@ -465,6 +465,10 @@ Titles are limited to [`PROCTITLE_MAX`] bytes and work under the `stdio` promise
 The native implementation performs the truncation; without the `alloc` feature,
 `CStrHelper` rejects a title of 1024 bytes or more with `ERANGE` before the
 native call instead of truncating it.
+
+`close_from` propagates the native result. OpenBSD reports `EBADF` when `lowfd`
+is negative or greater than every open descriptor; in either case nothing is
+closed, so the error is often benign around daemon startup.
 
 `set_progname` and `progname` expose `setprogname(3)`/`getprogname(3)`; the name
 is stored by pointer by the native implementation, so `set_progname` requires a

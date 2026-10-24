@@ -230,7 +230,8 @@ validation pass. Do not run destructive tests during documentation-only work.
   `Promise::Error` from the typed inventory. This is a crate API decision; the
   target kernel's promise table must still be verified independently.
 - `close_from` returns `Result<(), Errno>` so descriptor-hygiene failures are
-  observable.
+  observable. `EBADF` means the threshold was negative or above every open
+  descriptor; nothing was closed.
 - `daemonize_with` fails closed with child exit status 1 if `setsid`, the
   requested `chdir("/")`, or the standard-stream redirection fails.
 - `GroupPolicy::Initgroups` verification compares the observed supplementary
