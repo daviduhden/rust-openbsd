@@ -67,8 +67,9 @@ use core::ffi::CStr;
 #[cfg(feature = "std")]
 use crate::pledge::{Promises, pledge_child};
 
-/// Maximum length of a process title in bytes, corresponding to the native
-/// `MAX_PROCTITLE`; the native
+/// Maximum length of a process title in bytes.
+///
+/// This corresponds to the native `MAX_PROCTITLE`; the native
 /// [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3) truncates longer
 /// titles. See [`set_proctitle`] for the difference in `no_alloc` builds.
 pub const PROCTITLE_MAX: usize = 2048;
