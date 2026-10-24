@@ -166,11 +166,8 @@ fn mimmutable_skips_unmapped_holes() {
     // SAFETY: the range starts at a dedicated anonymous mapping; the middle
     // page is unmapped, so freezing the outer pages does not affect allocator
     // metadata.
-    assert_eq!(
-        unsafe { mimmutable_raw(base, length) },
-        0,
-        "mimmutable(2) with a hole"
-    );
+    let code = unsafe { mimmutable_raw(base, length) };
+    assert_eq!(code, 0, "mimmutable(2) with a hole");
 
     // Map a fresh page into the hole. The kernel did not mark unmapped pages
     // immutable, so this mapping must remain mutable.
@@ -188,9 +185,9 @@ fn mimmutable_skips_unmapped_holes() {
     };
     assert_ne!(replacement as isize, -1, "mmap(2) into the hole failed");
     // SAFETY: `replacement` is a live page mapped into the former hole.
+    let code = unsafe { mprotect(replacement, page_size, PROT_READ) };
     assert_eq!(
-        unsafe { mprotect(replacement, page_size, PROT_READ) },
-        0,
+        code, 0,
         "a page mapped into an unmapped hole must not be immutable"
     );
 }
