@@ -90,5 +90,7 @@ fn peer_credentials_work_with_unix_promise() {
 
 #[test]
 fn peer_credentials_require_a_socket_promise() {
-    assert_sigabrt(&run_child("child_peer_credentials_without_socket_promise_aborts"));
+    assert_sigabrt(&run_child(
+        "child_peer_credentials_without_socket_promise_aborts",
+    ));
 }

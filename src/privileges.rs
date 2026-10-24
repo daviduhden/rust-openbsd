@@ -821,8 +821,8 @@ fn resolve(name: &CStr, buf: &mut [u8]) -> Result<Option<Account>, Errno> {
     // A login name that exceeds `LOGIN_NAME_MAX` is a property of the entry,
     // not of the scratch buffer. Report it as `ENAMETOOLONG` so that
     // `account_by_name` does not retry the lookup with a larger heap buffer.
-    let account = Account::new(name, Uid(passwd.uid), Gid(passwd.gid))
-        .map_err(|_| Errno::ENAMETOOLONG)?;
+    let account =
+        Account::new(name, Uid(passwd.uid), Gid(passwd.gid)).map_err(|_| Errno::ENAMETOOLONG)?;
     Ok(Some(account))
 }
 

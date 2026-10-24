@@ -485,7 +485,8 @@ pub fn daemonize_with<F: FnOnce()>(options: DaemonOptions, body: F) -> Result<()
         // SAFETY:
         // The path is a fixed, NUL-terminated literal; `chdir(2)` only reads
         // it.
-        unsafe { ffi::chdir(c"/".as_ptr()) } == ffi::SUCCESS
+        let code = unsafe { ffi::chdir(c"/".as_ptr()) };
+        code == ffi::SUCCESS
     } else {
         true
     };

@@ -226,12 +226,18 @@ fn named_drops_reject_root_identity() {
     let Ok(uid_root) = Account::new(c"root", Uid::ROOT, Gid(1)) else {
         return;
     };
-    assert_eq!(ensure_unprivileged(&uid_root), Err(PrivDropError::RootAccount));
+    assert_eq!(
+        ensure_unprivileged(&uid_root),
+        Err(PrivDropError::RootAccount)
+    );
 
     let Ok(gid_root) = Account::new(c"service", Uid(1000), Gid::ROOT) else {
         return;
     };
-    assert_eq!(ensure_unprivileged(&gid_root), Err(PrivDropError::RootAccount));
+    assert_eq!(
+        ensure_unprivileged(&gid_root),
+        Err(PrivDropError::RootAccount)
+    );
 
     let Ok(unprivileged) = Account::new(c"service", Uid(1000), Gid(1000)) else {
         return;
