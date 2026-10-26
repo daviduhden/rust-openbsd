@@ -1,4 +1,5 @@
-// Copyright 2024-2026 Zack Newman and David Uhden Collado
+// Copyright (c) 2026, David Uhden Collado <david@uhden.dev>
+// Copyright (c) 2024-2026, Zack Newman <zack@philomathiclife.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

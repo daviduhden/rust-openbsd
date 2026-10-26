@@ -30,7 +30,7 @@ provenance.
 - `src/lib.rs` — crate-level guide and feature documentation.
 - Every `src/*.rs` module and public item.
 - `Cargo.toml` — description, license, MSRV, features, docs.rs metadata.
-- `LICENSE-APACHE`, copyright headers.
+- `LICENSE`, copyright headers.
 - `AGENTS.md` and the skills under `.agents/skills/`.
 
 ## Invariants

@@ -758,7 +758,7 @@ permissions are minimal.
 
 ## Licensing and attribution
 
-Licensed under the [Apache License, Version 2.0](LICENSE-APACHE).
+Licensed under the [Apache License, Version 2.0](LICENSE).
 
 This project is a fork of [`priv_sep`](https://git.philomathiclife.com/repos/priv_sep)
 by **Zack Newman**, which is dual-licensed under MIT and Apache-2.0. The original

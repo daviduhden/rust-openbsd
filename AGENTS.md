@@ -85,7 +85,7 @@ declared in `ffi.rs`, and do not expose raw pointers publicly.
 - Do not silence lints to make a change pass. The lint policy in `Cargo.toml`
   is part of the project contract.
 - New `.rs` files start with the Apache-2.0 header used by every existing file.
-- License: **Apache-2.0 only** (`LICENSE-APACHE`). MIT appears only as upstream
+- License: **Apache-2.0 only** (`LICENSE`). MIT appears only as upstream
   provenance in the README.
 
 ## FFI, memory, and error rules
