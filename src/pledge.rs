@@ -534,6 +534,8 @@ impl Promises {
     )]
     pub(crate) fn encode(&self, buf: &mut [u8; PLEDGE_BUFFER_LEN]) -> usize {
         let mut len = 0;
+        // Use the public inventory order rather than bit order so the emitted
+        // native string is stable and easy to compare with OpenBSD promise lists.
         for promise in Promise::ALL {
             if self.contains(promise) {
                 let name = promise.name().as_bytes();
@@ -544,10 +546,13 @@ impl Promises {
             }
         }
         if len == 0 {
+            // A non-null empty string means “set no promises”; NULL has a
+            // separate “leave unchanged” meaning in `pledge_parts`.
             buf[0] = 0;
             1
         } else {
-            // Replace the trailing separator with the NUL terminator.
+            // Replace the trailing separator with the NUL terminator so no
+            // extra parsing rule is needed for a final space.
             buf[len - 1] = 0;
             len
         }

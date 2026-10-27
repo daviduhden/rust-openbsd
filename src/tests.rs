@@ -15,9 +15,10 @@
 
 //! Pure, host-independent unit tests.
 //!
-//! These tests exercise serialization and set logic only; they never call the
-//! kernel. Kernel-dependent behavior is covered by the integration tests under
-//! `tests/`, which run in isolated child processes on OpenBSD.
+//! These tests exercise serialization, conversions, and policy decision logic
+//! only; they never call the kernel. Kernel-dependent behavior is covered by
+//! the integration tests under `tests/`, which run in isolated child processes
+//! on OpenBSD.
 
 #![expect(
     clippy::indexing_slicing,

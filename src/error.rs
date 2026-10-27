@@ -14,6 +14,13 @@
 // limitations under the License.
 
 //! Error type and `errno` integration.
+//!
+//! OpenBSD error numbers are represented directly rather than delegated to a
+//! cross-platform crate. The known values are contiguous from 1 through
+//! `EPROTO` (95), which is the invariant used by [`Errno::from_raw`]. Unknown
+//! values, including zero, become [`Errno::Other`]. The native `__errno()`
+//! pointer is thread-local; wrappers read it immediately after a failing call
+//! so another native operation cannot overwrite the error first.
 
 use core::{
     error::Error,

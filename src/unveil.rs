@@ -186,6 +186,8 @@ impl Permissions {
     pub(crate) fn encode(self) -> [u8; 5] {
         let mut buf = [0_u8; 5];
         let mut len = 0;
+        // Emit permissions in the native canonical `rwxc` order regardless
+        // of the order in which callers enabled the flag bits.
         for permission in [
             Permission::Read,
             Permission::Write,

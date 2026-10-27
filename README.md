@@ -7,22 +7,29 @@ common to OpenBSD daemons.
 The crate can only be built and used on OpenBSD; it fails at compile time on
 other platforms.
 
+## Reading the source documentation
+
+The implementation and its contracts are documented in the Rust source files. The
+repository-local [architecture guide](docs/ARCHITECTURE.md) maps modules, data
+flow, feature gates, native boundaries, and test strategy. These files are
+readable directly from a checkout; generating API HTML is not required.
+
 ## What's implemented
 
 | Facility | Module | Restricts/provides |
 | --- | --- | --- |
-| [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](https://docs.rs/rust-openbsd/latest/rust_openbsd/pledge/index.html) | which system operations the process may perform |
-| [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | which filesystem paths the process may access |
-| Privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | the credentials (UID/GID/groups) of the process |
-| [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | the filesystem root for pathname resolution |
-| [`issetugid(2)`](https://man.openbsd.org/issetugid.2), [`getpeereid(3)`](https://man.openbsd.org/getpeereid.3) | [`credentials`](https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html) | set-ID execution taint; Unix-domain peer credentials |
-| [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3), daemonization | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | process titles; background detachment |
-| [`arc4random(3)`](https://man.openbsd.org/arc4random.3), [`getentropy(2)`](https://man.openbsd.org/getentropy.2) | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | cryptographically strong random values; kernel entropy |
-| [`getrtable(2)`](https://man.openbsd.org/getrtable.2), [`setrtable(2)`](https://man.openbsd.org/setrtable.2) | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | routing domains |
-| [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3) | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | memory protection, secure erasure, constant-time comparison |
-| [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3), [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3) | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | password hashing and key derivation |
-| [`closefrom(2)`](https://man.openbsd.org/closefrom.2), [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), [`setprogname(3)`](https://man.openbsd.org/setprogname.3) | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | descriptor hygiene; program name |
-| [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3) *(OpenBSD 8.0)* | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | canonical pathname of the running executable |
+| [`pledge(2)`](https://man.openbsd.org/pledge.2) | [`pledge`](src/pledge.rs) | which system operations the process may perform |
+| [`unveil(2)`](https://man.openbsd.org/unveil.2) | [`unveil`](src/unveil.rs) | which filesystem paths the process may access |
+| Privilege dropping | [`privileges`](src/privileges.rs) | the credentials (UID/GID/groups) of the process |
+| [`chroot(2)`](https://man.openbsd.org/chroot.2) | [`chroot`](src/chroot.rs) | the filesystem root for pathname resolution |
+| [`issetugid(2)`](https://man.openbsd.org/issetugid.2), [`getpeereid(3)`](https://man.openbsd.org/getpeereid.3) | [`credentials`](src/credentials.rs) | set-ID execution taint; Unix-domain peer credentials |
+| [`setproctitle(3)`](https://man.openbsd.org/setproctitle.3), daemonization | [`process`](src/process.rs) | process titles; background detachment |
+| [`arc4random(3)`](https://man.openbsd.org/arc4random.3), [`getentropy(2)`](https://man.openbsd.org/getentropy.2) | [`random`](src/random.rs) | cryptographically strong random values; kernel entropy |
+| [`getrtable(2)`](https://man.openbsd.org/getrtable.2), [`setrtable(2)`](https://man.openbsd.org/setrtable.2) | [`rtable`](src/rtable.rs) | routing domains |
+| [`mimmutable(2)`](https://man.openbsd.org/mimmutable.2), [`explicit_bzero(3)`](https://man.openbsd.org/explicit_bzero.3), [`freezero(3)`](https://man.openbsd.org/freezero.3), [`timingsafe_bcmp(3)`](https://man.openbsd.org/timingsafe_bcmp.3), [`timingsafe_memcmp(3)`](https://man.openbsd.org/timingsafe_memcmp.3) | [`memory`](src/memory.rs) | memory protection, secure erasure, constant-time comparison |
+| [`crypt_checkpass(3)`](https://man.openbsd.org/crypt_checkpass.3), [`crypt_newhash(3)`](https://man.openbsd.org/crypt_newhash.3), [`bcrypt_pbkdf(3)`](https://man.openbsd.org/bcrypt_pbkdf.3) | [`authentication`](src/authentication.rs) | password hashing and key derivation |
+| [`closefrom(2)`](https://man.openbsd.org/closefrom.2), [`getdtablecount(2)`](https://man.openbsd.org/getdtablecount.2), [`setprogname(3)`](https://man.openbsd.org/setprogname.3) | [`process`](src/process.rs) | descriptor hygiene; program name |
+| [`getexecpath(3)`](https://man.openbsd.org/getexecpath.3) *(OpenBSD 8.0)* | [`process`](src/process.rs) | canonical pathname of the running executable |
 
 These mechanisms restrict *different dimensions* of process authority and are
 normally complementary: a typical OpenBSD daemon uses several of them. They are
@@ -613,24 +620,24 @@ command-line interface, and no unrelated functionality.
 
 | OpenBSD facility | Rust module | Status |
 | --- | --- | --- |
-| `pledge(2)` | [`pledge`](https://docs.rs/rust-openbsd/latest/rust_openbsd/pledge/index.html) | supported (typed promises, NULL/empty distinction, execpromises) |
-| `unveil(2)` | [`unveil`](https://docs.rs/rust-openbsd/latest/rust_openbsd/unveil/index.html) | supported (rules, locking, empty permissions) |
-| privilege dropping | [`privileges`](https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html) | supported (daemon sequence, verification, two group policies) |
-| `chroot(2)` | [`chroot`](https://docs.rs/rust-openbsd/latest/rust_openbsd/chroot/index.html) | supported (`chroot`, `enter_chroot`) |
-| `issetugid(2)`, `getpeereid(3)` | [`credentials`](https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html) | supported |
-| `setproctitle(3)`, `getprogname(3)`/`setprogname(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (format-safe) |
-| `daemon(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`daemonize`, documented fork hazards) |
-| fork/exec + execpromises | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported (`fork_exec`, `fork_exec_pledged`, `exec_pledged`) |
-| `closefrom(2)`, `getdtablecount(2)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported |
-| `getexecpath(3)` | [`process`](https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html) | supported behind the `openbsd-8-0` feature (first appeared in OpenBSD 8.0) |
-| `arc4random(3)` family | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported |
-| `getentropy(2)` | [`random`](https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html) | supported (native 256-byte limit) |
-| `getrtable(2)`/`setrtable(2)` | [`rtable`](https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html) | supported |
-| `mimmutable(2)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (`unsafe`; the caller guarantees a dedicated mapping) |
-| `explicit_bzero(3)`, `freezero(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported (explicit native memory only) |
-| `timingsafe_bcmp(3)`, `timingsafe_memcmp(3)` | [`memory`](https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html) | supported |
-| `crypt_checkpass(3)`, `crypt_newhash(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |
-| `bcrypt_pbkdf(3)` | [`authentication`](https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html) | supported |
+| `pledge(2)` | [`pledge`](src/pledge.rs) | supported (typed promises, NULL/empty distinction, execpromises) |
+| `unveil(2)` | [`unveil`](src/unveil.rs) | supported (rules, locking, empty permissions) |
+| privilege dropping | [`privileges`](src/privileges.rs) | supported (daemon sequence, verification, two group policies) |
+| `chroot(2)` | [`chroot`](src/chroot.rs) | supported (`chroot`, `enter_chroot`) |
+| `issetugid(2)`, `getpeereid(3)` | [`credentials`](src/credentials.rs) | supported |
+| `setproctitle(3)`, `getprogname(3)`/`setprogname(3)` | [`process`](src/process.rs) | supported (format-safe) |
+| `daemon(3)` | [`process`](src/process.rs) | supported (`daemonize`, documented fork hazards) |
+| fork/exec + execpromises | [`process`](src/process.rs) | supported (`fork_exec`, `fork_exec_pledged`, `exec_pledged`) |
+| `closefrom(2)`, `getdtablecount(2)` | [`process`](src/process.rs) | supported |
+| `getexecpath(3)` | [`process`](src/process.rs) | supported behind the `openbsd-8-0` feature (first appeared in OpenBSD 8.0) |
+| `arc4random(3)` family | [`random`](src/random.rs) | supported |
+| `getentropy(2)` | [`random`](src/random.rs) | supported (native 256-byte limit) |
+| `getrtable(2)`/`setrtable(2)` | [`rtable`](src/rtable.rs) | supported |
+| `mimmutable(2)` | [`memory`](src/memory.rs) | supported (`unsafe`; the caller guarantees a dedicated mapping) |
+| `explicit_bzero(3)`, `freezero(3)` | [`memory`](src/memory.rs) | supported (explicit native memory only) |
+| `timingsafe_bcmp(3)`, `timingsafe_memcmp(3)` | [`memory`](src/memory.rs) | supported |
+| `crypt_checkpass(3)`, `crypt_newhash(3)` | [`authentication`](src/authentication.rs) | supported |
+| `bcrypt_pbkdf(3)` | [`authentication`](src/authentication.rs) | supported |
 | `imsg(3)`/`ibuf(3)` | — | deferred: substantial IPC abstraction with descriptor-passing ownership; cannot be runtime-validated before shipping; `std` `sendmsg`/`recvmsg` with `SCM_RIGHTS` covers the primitive mechanism |
 | `kqueue(2)`/`kevent(2)` | — | deferred: general event facility with existing ecosystem crates; not OpenBSD-security-specific |
 | `setusercontext(3)`/`login_cap(3)` | — | deferred: login-session policy framework; the daemon privilege-drop sequence remains the supported policy |
@@ -776,51 +783,51 @@ behavioral specification.
 This is a fork, not an independent clean-room implementation, and it does not
 represent the original upstream work as new.
 
-[`Promise`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
-[`Promise::Error`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Promise.html
-[`Promises`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Promises.html
-[`pledge`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge.html
-[`pledge_child`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_child.html
-[`pledge_parts`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_parts.html
-[`pledge_raw`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.pledge_raw.html
-[`privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/privileges/index.html
-[`credentials`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/credentials/index.html
-[`process`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/process/index.html
-[`random`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/random/index.html
-[`rtable`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/rtable/index.html
-[`memory`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/memory/index.html
-[`authentication`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/authentication/index.html
-[`unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil.html
-[`unveil_paths`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_paths.html
-[`lock_unveil`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.lock_unveil.html
-[`unveil_and_lock`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.unveil_and_lock.html
-[`CStrHelper`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/trait.CStrHelper.html
-[`Permission::Read`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
-[`Permission::Write`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
-[`Permission::Execute`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
-[`Permission::Create`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Permission.html
-[`Account`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.Account.html
-[`account_by_name`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.account_by_name.html
-[`drop_privileges`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges.html
-[`drop_privileges_with`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_with.html
-[`drop_privileges_to`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_privileges_to.html
-[`drop_supplementary_groups`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.drop_supplementary_groups.html
-[`GroupPolicy`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
-[`GroupPolicy::PrimaryGroupOnly`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
-[`GroupPolicy::Initgroups`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.GroupPolicy.html
-[`PrivDropError`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.PrivDropError.html
-[`Errno`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/enum.Errno.html
-[`chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.chroot.html
-[`enter_chroot`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.enter_chroot.html
-[`PROCTITLE_MAX`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/constant.PROCTITLE_MAX.html
-[`arc4_random_uniform`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.arc4_random_uniform.html
-[`mimmutable`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.mimmutable.html
-[`freezero`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.freezero.html
-[`explicit_bzero`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.explicit_bzero.html
-[`daemonize`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.daemonize.html
-[`DaemonOptions`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
-[`DaemonOptions::change_directory_to_root`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
-[`DaemonOptions::redirect_standard_streams`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/struct.DaemonOptions.html
+[`Promise`]: src/pledge.rs
+[`Promise::Error`]: src/pledge.rs
+[`Promises`]: src/pledge.rs
+[`pledge`]: src/pledge.rs
+[`pledge_child`]: src/pledge.rs
+[`pledge_parts`]: src/pledge.rs
+[`pledge_raw`]: src/pledge.rs
+[`privileges`]: src/privileges.rs
+[`credentials`]: src/credentials.rs
+[`process`]: src/process.rs
+[`random`]: src/random.rs
+[`rtable`]: src/rtable.rs
+[`memory`]: src/memory.rs
+[`authentication`]: src/authentication.rs
+[`unveil`]: src/unveil.rs
+[`unveil_paths`]: src/unveil.rs
+[`lock_unveil`]: src/unveil.rs
+[`unveil_and_lock`]: src/unveil.rs
+[`CStrHelper`]: src/cstr.rs
+[`Permission::Read`]: src/unveil.rs
+[`Permission::Write`]: src/unveil.rs
+[`Permission::Execute`]: src/unveil.rs
+[`Permission::Create`]: src/unveil.rs
+[`Account`]: src/privileges.rs
+[`account_by_name`]: src/privileges.rs
+[`drop_privileges`]: src/privileges.rs
+[`drop_privileges_with`]: src/privileges.rs
+[`drop_privileges_to`]: src/privileges.rs
+[`drop_supplementary_groups`]: src/privileges.rs
+[`GroupPolicy`]: src/privileges.rs
+[`GroupPolicy::PrimaryGroupOnly`]: src/privileges.rs
+[`GroupPolicy::Initgroups`]: src/privileges.rs
+[`PrivDropError`]: src/privileges.rs
+[`Errno`]: src/error.rs
+[`chroot`]: src/chroot.rs
+[`enter_chroot`]: src/chroot.rs
+[`PROCTITLE_MAX`]: src/process.rs
+[`arc4_random_uniform`]: src/random.rs
+[`mimmutable`]: src/memory.rs
+[`freezero`]: src/memory.rs
+[`explicit_bzero`]: src/memory.rs
+[`daemonize`]: src/process.rs
+[`DaemonOptions`]: src/process.rs
+[`DaemonOptions::change_directory_to_root`]: src/process.rs
+[`DaemonOptions::redirect_standard_streams`]: src/process.rs
 [`std::process::Command`]: https://doc.rust-lang.org/stable/std/process/struct.Command.html
 [`std::io::Error`]: https://doc.rust-lang.org/stable/std/io/struct.Error.html
-[`get_execpath`]: https://docs.rs/rust-openbsd/latest/rust_openbsd/fn.get_execpath.html
+[`get_execpath`]: src/process.rs

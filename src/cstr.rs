@@ -112,6 +112,9 @@ impl CStrHelper for [u8] {
         const C_STR_MAX_STACK_ALLOCATION: usize = 0x400;
         let len = self.len();
         if len < C_STR_MAX_STACK_ALLOCATION {
+            // Keep the common short-input path allocation-free. The callback
+            // below also bounds the lifetime of the temporary C string to this
+            // stack frame; only longer inputs reach the alloc-backed fallback.
             let mut buf = MaybeUninit::<[u8; C_STR_MAX_STACK_ALLOCATION]>::uninit();
             let buf_ptr = buf.as_mut_ptr().cast();
             let slice_ptr = self.as_ptr();

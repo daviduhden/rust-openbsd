@@ -61,6 +61,10 @@
 //! are normally complementary: a typical OpenBSD daemon uses several of them.
 //! They are not interchangeable.
 //!
+//! For a source-first map of module ownership, data flow, feature gates, and
+//! tests, see the repository-local `docs/ARCHITECTURE.md`. That Markdown file
+//! and these source comments can be read directly without generating API HTML.
+//!
 //! # OpenBSD only
 //!
 //! This crate is deliberately OpenBSD-only. Building it for any other

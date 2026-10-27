@@ -848,6 +848,9 @@ pub fn account_by_name<P: CStrHelper>(name: P) -> Result<Option<Account>, Errno>
         let mut stack = [0_u8; 0x400];
         #[cfg(feature = "alloc")]
         {
+            // Retry only a scratch-buffer ERANGE. `resolve` translates an
+            // overlong database login name to ENAMETOOLONG, so that permanent
+            // entry constraint does not trigger a larger allocation.
             match resolve(name, &mut stack) {
                 Err(Errno::ERANGE) => {
                     let mut heap = vec![0_u8; 0x10_0000];

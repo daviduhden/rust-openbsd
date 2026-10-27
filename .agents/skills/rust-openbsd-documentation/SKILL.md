@@ -102,6 +102,17 @@ provenance.
 9. Do not edit lints, features, or dependencies to make a doctest pass; fix the
    example or the feature claim.
 
+## Source-first documentation
+
+Keep architecture explanations in repository Markdown when they span multiple
+modules, and keep local contracts beside their Rust declarations and
+implementations. Use relative source links so a checkout is enough to follow the
+explanation. External manual pages may be optional references, but do not make
+them necessary to understand the implementation. When a task explicitly
+requires self-contained, directly readable documentation or prohibits
+documentation generation, do not run `cargo doc`; validate the Markdown, local
+paths, comment language, and documentation-only diff directly instead.
+
 ## Testing and acceptance
 
 - `cargo doc --no-deps --all-features` on any host (the `cfg(doc)` escape).
