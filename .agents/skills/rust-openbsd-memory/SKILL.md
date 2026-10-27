@@ -126,3 +126,7 @@ randomness, load `rust-openbsd-crypto-auth`.
 - OpenBSD `sys/uvm/uvm_mmap.c`, `sys/uvm/uvm_map.c`, and
   `lib/libc/stdlib/malloc.c` for the target release.
 - <https://doc.rust-lang.org/nomicon/ffi.html>
+
+## Maintenance & Continuous Learning
+
+When this skill is used to modify the repository, review it after the task alongside the applicable `AGENTS.md`, related specialist instructions, and referenced skill materials. Update this skill when procedures, tools, configuration, project behavior, or assumptions changed; add reusable discoveries and correct guidance that proved wrong. Keep examples, paths, and validation commands current, remove obsolete or contradictory knowledge, and avoid notes tied only to one execution. Check references and run `python3 scripts/check_agent_maintenance.py --base <base-ref>` before completion. The automated check validates structure and the presence of a substantive knowledge-file diff, not semantic relevance; judge relevance explicitly. Report the synchronization result in the final response. A task is incomplete if required synchronization is skipped or fails.

@@ -246,3 +246,46 @@ validation pass. Do not run destructive tests during documentation-only work.
 - OpenBSD 7.9 and MSRV 1.85.0 are not in the CI matrix. `closefrom`,
   `getpeereid`-under-pledge, and `mimmutable` hole tests run on 8.0/amd64 and
   8.0/arm64; 7.9 must be verified manually.
+
+## Continuous Agent & Skills Maintenance
+
+Agent instructions and skills are living repository artifacts.
+
+Every repository modification MUST include an agent/skills synchronization step.
+
+Before completing any task, inspect the applicable AGENTS.md and SKILL.md files, update the affected instructions, and validate their consistency with the implementation.
+
+A code change without the corresponding agent knowledge maintenance is considered incomplete.
+
+Never claim completion when the synchronization step has been skipped or has failed. This applies after changes to source, tests, configuration, dependencies, documentation, workflows, or repository structure, including changes to this policy itself. A code change without the corresponding agent knowledge maintenance is incomplete. Never claim completion when synchronization was skipped or failed.
+
+Before completing a task:
+
+1. Identify every changed path and map it to the relevant rows in the architecture table, applicable nested `AGENTS.md` files, `.github/agents/*.agent.md`, and skills under `.agents/skills/**/SKILL.md`, `.github/skills/**/SKILL.md`, or `.claude/skills/**/SKILL.md`. Also inspect any present Cursor, Copilot, or other tool-specific instructions that cover the change.
+2. Read the applicable instructions and skills, including their referenced local files. Check whether procedures, assumptions, paths, examples, commands, validation, or ownership changed.
+3. Update at least one applicable instruction or skill with concrete reusable knowledge whenever repository content changes. Update every affected instruction where the documented behavior changed. Create a skill only when a recurring domain workflow has no suitable existing skill; do not create one just to satisfy the file-count check. Keep specialist instructions aligned with this file and preserve skill frontmatter/specification compatibility.
+4. Remove obsolete or contradictory guidance, add reusable discoveries, and verify local links and agent/skill routing. Do not add timestamps, empty edits, or execution-specific notes to satisfy the rule.
+5. Run `python3 scripts/check_agent_maintenance.py --base <base-ref>` (CI supplies the PR base SHA). The check verifies that the Git change set includes a substantive instruction/skill diff, validates skill frontmatter and required headings, and checks local Markdown links where paths can be resolved. It is a structural check; a human/agent must still judge semantic relevance. Run relevant repository validation as specified above and in the affected skills.
+6. If the required update or validation cannot be completed, state the reason and mark the task incomplete. Do not silently omit synchronization.
+
+When changing agent or skill policy itself, perform one complete end-of-task review of this file, every affected specialist instruction and skill, the validator, and CI. Re-run validation if corrections were needed; this avoids recursive maintenance loops.
+
+### Post-Change Knowledge Synchronization
+
+There are currently no tool-specific specialized agent files in this repository. Any added or existing specialized agent MUST include this section and, after every change it makes, identify its related skills, review them and its own instructions, update reusable changed knowledge, run or delegate applicable validation, and report synchronization results in its final response. The main `AGENTS.md` remains authoritative; specialist instructions may add domain detail but must not contradict it.
+
+### Mandatory Definition of Done
+
+- [ ] Repository changes implemented.
+- [ ] Relevant agent instructions reviewed.
+- [ ] Relevant skills reviewed.
+- [ ] Affected `AGENTS.md` / `SKILL.md` files updated.
+- [ ] Obsolete knowledge removed.
+- [ ] New reusable knowledge incorporated.
+- [ ] Agent and skill references validated.
+- [ ] Automated maintenance checks passed.
+- [ ] Final synchronization status reported.
+
+A failed item must be corrected or explicitly reported as a limitation, and the task must not be reported complete.
+
+Final responses MUST include **Agent & Skills Synchronization** with agents and skills reviewed, instruction files updated, knowledge incorporated or corrected, validations actually run, and final status `PASS` or `FAIL`.
