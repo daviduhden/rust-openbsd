@@ -27,7 +27,7 @@ are static checks and cannot prove a security mechanism works.
 - `tests/*.rs` — one integration binary per module area.
 - `tests/common/mod.rs` — child re-exec, signal assertions, root skips, C probes.
 - `.github/workflows/ci.yml` — the tested matrix.
-- `scripts/check_agent_maintenance.py` — the repository instruction/skill gate; lint
+- `scripts/validate-agent-knowledge.py` — the repository instruction/skill gate; lint
   it with `ruff check` and `ruff format --check` when changing the validator.
 - Reference: `references/test-harness.md`.
 
@@ -133,4 +133,4 @@ Never call a mechanism “tested” when only step 1 or 2 succeeded.
 
 ## Maintenance & Continuous Learning
 
-When this skill is used to modify the repository, review it after the task alongside the applicable `AGENTS.md`, related specialist instructions, and referenced skill materials. Update this skill when procedures, tools, configuration, project behavior, or assumptions changed; add reusable discoveries and correct guidance that proved wrong. Keep examples, paths, and validation commands current, remove obsolete or contradictory knowledge, and avoid notes tied only to one execution. Check references and run `python3 scripts/check_agent_maintenance.py --base <base-ref>` before completion. The automated check validates structure and the presence of a substantive knowledge-file diff, not semantic relevance; judge relevance explicitly. Report the synchronization result in the final response. A task is incomplete if required synchronization is skipped or fails.
+When this skill is used to modify the repository, review it after the task alongside the applicable `AGENTS.md`, related specialist instructions, and referenced skill materials. Update this skill when procedures, tools, configuration, project behavior, or assumptions changed; add reusable discoveries and correct guidance that proved wrong. Keep examples, paths, and validation commands current, remove obsolete or contradictory knowledge, and avoid notes tied only to one execution. Check references and run `python3 scripts/validate-agent-knowledge.py --scope range --base <base-ref> --head HEAD` before completion. The automated check validates structure and the presence of a substantive knowledge-file diff, not semantic relevance; judge relevance explicitly. Report the synchronization result in the final response. A task is incomplete if required synchronization is skipped or fails.
