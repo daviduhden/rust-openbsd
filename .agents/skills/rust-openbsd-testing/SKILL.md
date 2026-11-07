@@ -93,6 +93,26 @@ up even on panic. Keep `catch_unwind` cleanup where it exists.
    failure.
 8. Keep cleanup best-effort and panic-safe.
 
+## Workflow action pins
+
+`.github/workflows/ci.yml` and `.github/workflows/agent-knowledge-validation.yml`
+pin every external action to a full commit SHA with a trailing release
+comment; do not replace one with a moving tag such as `@v4` or `@v7`.
+
+| Action | Version | Commit |
+| --- | --- | --- |
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `vmactions/openbsd-vm` | v1.4.9 | `f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3` |
+
+`vmactions/openbsd-vm` boots the real OpenBSD 8.0 VM that runs the prepare and
+run scripts, so its release controls boot, SSH, and script-execution behavior.
+Pin it rather than a tag so a retagged upstream release cannot change the
+kernel test environment silently. Before changing either pin, dereference the
+tag (`https://api.github.com/repos/OWNER/REPO/git/ref/tags/TAG`), confirm the
+commit matches, update the comment in the same edit, and keep both workflows
+on the same checkout version. `ci.yml` and the knowledge workflow are
+separate files; updating only one leaves the other on an older action.
+
 ## Testing and acceptance
 
 On OpenBSD:
