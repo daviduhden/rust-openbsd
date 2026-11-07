@@ -265,7 +265,7 @@ Before completing a task:
 2. Read the applicable instructions and skills, including their referenced local files. Check whether procedures, assumptions, paths, examples, commands, validation, or ownership changed.
 3. Update at least one applicable instruction or skill with concrete reusable knowledge whenever repository content changes. Update every affected instruction where the documented behavior changed. Create a skill only when a recurring domain workflow has no suitable existing skill; do not create one just to satisfy the file-count check. Keep specialist instructions aligned with this file and preserve skill frontmatter/specification compatibility.
 4. Remove obsolete or contradictory guidance, add reusable discoveries, and verify local links and agent/skill routing. Do not add timestamps, empty edits, or execution-specific notes to satisfy the rule.
-5. Run `perl scripts/validate-agent-knowledge.pl --scope range --base <base-ref> --head HEAD` (CI supplies the PR base SHA). The check verifies that the Git change set includes a substantive instruction/skill diff, validates skill frontmatter and required headings, and checks local Markdown links where paths can be resolved. It is a structural check; a human/agent must still judge semantic relevance. Run relevant repository validation as specified above and in the affected skills.
+5. Run `perl scripts/validate-agent-knowledge.pl --scope range --base <base-ref> --head HEAD` (the manual workflow validates the checked-out worktree instead). The check verifies that the Git change set includes a substantive instruction/skill diff, validates skill frontmatter and required headings, and checks local Markdown links where paths can be resolved. It is a structural check; a human/agent must still judge semantic relevance. Run relevant repository validation as specified above and in the affected skills.
 6. If the required update or validation cannot be completed, state the reason and mark the task incomplete. Do not silently omit synchronization.
 
 When changing agent or skill policy itself, perform one complete end-of-task review of this file, every affected specialist instruction and skill, the validator, and CI. Re-run validation if corrections were needed; this avoids recursive maintenance loops.
@@ -282,7 +282,7 @@ for its contract tests. The validator requires Perl 5.14+ (JSON::PP core) and Gi
 core Perl modules, and publishes contract version `1.0.0`. All
 adopting repositories share the same CLI, AK001-AK006 identifiers, output
 schema, and exit codes (`0` pass, `1` policy failure, `2` execution/configuration
-error). For a pull request, pass both revisions with
+error). To compare committed revisions locally, pass both with
 `--scope range --base BASE_REF --head HEAD_REF`; compare from their merge base.
 
 Read [Agent Knowledge Validation Contract](docs/agent-knowledge-validation.md)
@@ -292,8 +292,9 @@ review; their warnings do not prove or disprove semantic correctness. Keep the
 canonical script and black-box Perl suite byte-identical across adopting
 repositories. Repository-specific requirements belong in the documented TOML
 configuration or a stable `AKX...` extension, never in a private fork of the
-shared rules. The GitHub PR workflow runs the same tests and range command;
-it does not edit files or require secrets.
+shared rules. All workflows are manual-only: start them from the Actions
+tab or with `gh workflow run`; the agent workflow runs the same tests and
+worktree validation and does not edit files or require secrets.
 
 ### Mandatory Definition of Done
 
